@@ -14,22 +14,29 @@ import functools
 # import pickle
 # from __future__ import print_function
 
+#####################################################################################################
+
+# to do
+# currently method is:
+# 1) average over LAST for {20,60} seconds
+# 2) sigma clip over days
+# 3) sigma clip over baseline
+
 # Input parameters:
+
 LAST = 3.31 # float
 
 last_average = True
-last_average_period = 40 #seconds; chose between {20,60}
-mean_last = False
-median_last = True
+last_average_period = 20 #seconds; chose between {20,60}
+last_statistic = 'median'
 
 IDRDay = 2458098 # chose one of days, if no averaging
-
-mean_days = False
-median_days = True
-
 statistic_all_IDR2 = False # run statistics over all IDR2 Days?
+IDR2=[2458098, 2458099, 2458101, 2458102, 2458103, 2458104, 2458105, 2458106, 2458107,
+        2458108, 2458109, 2458110, 2458111, 2458112, 2458113, 2458114, 2458115, 2458116, 2458140]
 chosen_days = [2458098, 2458099, 2458101, 2458102, 2458103, 2458104, 2458105, 2458106, 2458107, 2458108,
             2458110, 2458111, 2458112, 2458113, 2458116]
+days_statistic = 'median'
 
 sigma_clip_days = True
 sc_days_stds = 3.0
@@ -40,8 +47,27 @@ sc_bls_stds = 3.0
 channel_start = 100
 channel_end = 400
 
+# check misaligned_days
+
+#####################################################################################################
+
 # if last_end - last_start > 0.017:
 #     raise ValueError('Cannot average in time for more than 1 minute.')
+
+
+if last_statistic == 'median':
+    mean_last = False
+    median_last = True
+elif last_statistic == 'mean':
+    mean_last = True
+    median_last = False
+
+if days_statistic == 'median':
+    mean_days = False
+    median_days = True
+elif days_statistic == 'mean':
+    mean_days = True
+    median_days = False
 
 
 if mean_last == median_last:
@@ -101,10 +127,11 @@ frc[1,:] = freqs
 #     print(last[-1,i])
 #     print('-----------------')
 
+# removing misalignmed data - fault in align_lst.py script
 misaligned_days = [10,15,17]
-flags_mis = np.delete(np.arange(0,18), misaligned_days) # finding days to flag due to misalignment fault in align_lst.py script
+flags_mis = np.delete(np.arange(0,18), misaligned_days)
 
-# flagging faulty days due to misalignment
+# indexing out faulty days due to misalignment
 visibilities = visibilities[:,flags_mis,:,:]
 last = last[:,flags_mis]
 days = days[flags_mis]
@@ -115,36 +142,38 @@ vis_chan_range = visibilities[:,:,:,chan_range]
 channels = channels[chan_range]
 
 
-# averaging over LST
+# averaging over LAST
 if last_average:
-    a = 1
+    a = 1 # for index change later - array will reduced in dimension if indexed for 1 specific LAST
+    # selecting nearest LAST sessions to average over nearest {20,60} second period (try for half either side)
     last_bound_h = last_average_period / 60. / 60. / 1.5 # here 1.5 obtained from trial and error to match desired time averaging with actual averaging
     # last_mask_array = np.empty_like(vis_chan_range, dtype=bool)
     dims = np.zeros_like(vis_chan_range)
+    # find number of LAST bins within last_average_period, and index array accordingly
     test_idx = np.squeeze(np.where((last[:,0] < LAST + last_bound_h) & (last[:,0] > LAST - last_bound_h)))
-    vis_lst_chan_range = dims[test_idx,:,:,:]
+    vis_last_chan_range = dims[test_idx,:,:,:]
     actual_avg_all =[]
-    for i in range(last.shape[1]):
-        chosen_last_idx = np.squeeze(np.where((last[:,i] < LAST + last_bound_h) & (last[:,i] > LAST - last_bound_h)))
-        actual_avg = (last[:,i][chosen_last_idx[-1]] - last[:,i][chosen_last_idx[0]]) * 60**2
+    for day in range(last.shape[1]):
+        chosen_last_idx = np.squeeze(np.where((last[:,day] < LAST + last_bound_h) & (last[:,day] > LAST - last_bound_h)))
+        actual_avg = (last[:,day][chosen_last_idx[-1]] - last[:,day][chosen_last_idx[0]]) * 60**2
         actual_avg_all.append(actual_avg)
         # print('Actual average in LAST for chosen day(s) '+str(days[i])+' is '+str(actual_avg)+' seconds.')
         # print(chosen_last_idx)
-        vis_lst_chan_range[:,i,:,:] = vis_chan_range[chosen_last_idx,i,:,:]
+        vis_last_chan_range[:,day,:,:] = vis_chan_range[chosen_last_idx,day,:,:]
     print('Actual average in LAST for chosen days is ~'+str(np.int(np.mean(actual_avg_all)))+' seconds.')
     if (np.max(actual_avg_all) - np.min(actual_avg_all)) > 0.1:
         raise ValueError('Combined exposure by joining consecutive sessions inconsistent day to day. Check actual_avg_all values.')
 
-# chosing specific LST
+# chosing specific LAST
 elif not last_average:
     a = 0
-    vis_lst_chan_range = vis_chan_range[find_nearest(last[:,0], LAST)[0], :, :, :]
+    vis_last_chan_range = vis_chan_range[find_nearest(last[:,0], LAST)[0], :, :, :]
 
-# 0. + 0.j in vis_lst_chan_range
+# 0. + 0.j in vis_last_chan_range
 
 
 # vis_flagged = vis_range[flags] # flagging visibilities - flagging currently not working...
-vis_amps = np.absolute(vis_lst_chan_range) # taking visibility amplitudes (absolute value of complex visibility)
+vis_amps = np.absolute(vis_last_chan_range) # taking visibility amplitudes (absolute value of complex visibility)
 dims = np.zeros_like(vis_amps)
 # test by plotting visibility amplitude vs channel
 # test_vis = np.absolute(visibilities[find_nearest(last[:,np.where(days == IDRDay)][0][0], LAST)[0], np.where(days == IDRDay)[0][0], :, :]) #dimensions (baselines, frequency)
@@ -172,20 +201,20 @@ if sigma_clip_days: # sigma clip over days - leaving LAST bins, baselines and fr
     # what does axis here mean? does not seem to clip as required
     # vis_amps = astropy.stats.sigma_clip(vis_amps, sigma=sc_days_stds, maxiters=None, cenfunc='median', stdfunc='std', axis=1, masked=True, return_bounds=False)
     dummy = dims
-    for j in range(0, vis_amps.shape[1+a]): # iterate over baselines
-        for k in range(0, vis_amps.shape[2+a]): # iterate over frequencies
+    for bl in range(0, vis_amps.shape[1+a]): # iterate over baselines
+        for frq in range(0, vis_amps.shape[2+a]): # iterate over frequencies
             # or use:
             # vis_amps[i,:,j,k] = scipy.stats.sigmaclip(vis_amps[i,:,j,k], low=sc_days_stds, high=sc_days_stds)
             # although this does not mask array, does not retain dimensionality
             if last_average: # dimensions of vis_amps depends on last_average (+1 dimensions if True)
-                for m in range(0, vis_amps.shape[0]): # iterate over lst
-                    l = astropy.stats.sigma_clip(vis_amps[m,:,j,k], sigma=sc_days_stds, maxiters=None, cenfunc='median', stdfunc='std', masked=True, return_bounds=False)
+                for lst in range(0, vis_amps.shape[0]): # iterate over last
+                    l = astropy.stats.sigma_clip(vis_amps[lst,:,bl,frq], sigma=sc_days_stds, maxiters=None, cenfunc='median', stdfunc='std', masked=True, return_bounds=False)
                     np.ma.set_fill_value(l,-999)
-                    dummy[m,:,j,k] = l.filled()
+                    dummy[lst,:,bl,frq] = l.filled()
             elif not last_average:
-                l = astropy.stats.sigma_clip(vis_amps[:,j,k], sigma=sc_days_stds, maxiters=None, cenfunc='median', stdfunc='std', masked=True, return_bounds=False)
+                l = astropy.stats.sigma_clip(vis_amps[:,bl,frq], sigma=sc_days_stds, maxiters=None, cenfunc='median', stdfunc='std', masked=True, return_bounds=False)
                 np.ma.set_fill_value(l,-999)
-                dummy[:,j,k] = l.filled()
+                dummy[:,bl,frq] = l.filled()
     vis_amps = np.ma.masked_where(dummy==-999, dummy)
 
 if -999 in vis_amps.data:
@@ -201,17 +230,17 @@ else:
 if sigma_clip_bl: # sigma clip over days - leaving LAST bins, baselines and frequencies intact
     # vis_amps = astropy.stats.sigma_clip(vis_amps, sigma=sc_bls_stds, maxiters=None, cenfunc='median', stdfunc='std', axis=2, masked=False, return_bounds=False)
     dummy_2 = dims
-    for j in range(0, vis_amps.shape[0]): # iterate over days
-        for k in range(0, vis_amps.shape[2]): # iterate over frequencies
+    for day in range(0, vis_amps.shape[0]): # iterate over days
+        for frq in range(0, vis_amps.shape[2]): # iterate over frequencies
             if last_average:
-                for m in range(0, vis_amps.shape[0]): # iterate over lst
-                    l = astropy.stats.sigma_clip(vis_amps[m,j,:,k], sigma=sc_bls_stds, maxiters=None, cenfunc='median', stdfunc='std', masked=True, return_bounds=False)
+                for lst in range(0, vis_amps.shape[0]): # iterate over last
+                    l = astropy.stats.sigma_clip(vis_amps[lst,day,:,frq], sigma=sc_bls_stds, maxiters=None, cenfunc='median', stdfunc='std', masked=True, return_bounds=False)
                     np.ma.set_fill_value(l,-999)
-                    dummy_2[m,j,:,k] = l.filled()
+                    dummy_2[lst,day,:,frq] = l.filled()
             elif not last_average:
-                l = astropy.stats.sigma_clip(vis_amps[j,:,k], sigma=sc_bls_stds, maxiters=None, cenfunc='median', stdfunc='std', masked=True, return_bounds=False)
+                l = astropy.stats.sigma_clip(vis_amps[day,:,frq], sigma=sc_bls_stds, maxiters=None, cenfunc='median', stdfunc='std', masked=True, return_bounds=False)
                 np.ma.set_fill_value(l,-999)
-                dummy_2[j,:,k] = l.filled()
+                dummy_2[day,:,frq] = l.filled()
     vis_amps = np.ma.masked_where(dummy_2==-999, dummy_2)
 
 if -999 in vis_amps.data:
@@ -369,22 +398,22 @@ def baseline_analysis(ps):
     no_rows = plot_dim[0]
     no_cols = plot_dim[1]
     fig, axs = plt.subplots(nrows=7, ncols=5, sharex=True, sharey=True, squeeze=False)
-    for i in range(no_rows):
-        for j in range(no_cols):
-            axs[i,j].semilogy(cross_power_spectrum[(i*no_cols)+j,0,:]*1e6, np.sqrt(cross_power_spectrum[(i*no_cols)+j,1,:]), linewidth=1)
-            # axs[i,j].legend([str(baselines[(i*no_cols)+j])],loc="upper right", prop={'size': 6})
+    for row in range(no_rows):
+        for col in range(no_cols):
+            axs[row,col].semilogy(cross_power_spectrum[(row*no_cols)+col,0,:]*1e6, np.sqrt(cross_power_spectrum[(row*no_cols)+col,1,:]), linewidth=1)
+            # axs[row,col].legend([str(baselines[(row*no_cols)+col])],loc="upper right", prop={'size': 6})
 
-            axs[i,j].set_xticks(np.arange(0,6))
-            axs[i,j].set_xticks(np.arange(0,6,0.2), minor=True)
-            axs[i,j].set_yticks(np.power(np.ones(5)*10,-np.arange(1,6)))
+            axs[row,col].set_xticks(np.arange(0,6))
+            axs[row,col].set_xticks(np.arange(0,6,0.2), minor=True)
+            axs[row,col].set_yticks(np.power(np.ones(5)*10,-np.arange(1,6)))
             minors = []
             for p in range(6):
                 for q in range(2,10):
                     minors.append(q * (10**(-1*p)))
             minors = np.array(minors)
-            axs[i,j].set_yticks(minors, minor=True)
-            axs[i,j].xaxis.set_tick_params(width=1)
-            axs[i,j].yaxis.set_tick_params(width=1)
+            axs[row,col].set_yticks(minors, minor=True)
+            axs[row,col].xaxis.set_tick_params(width=1)
+            axs[row,col].yaxis.set_tick_params(width=1)
     plt.suptitle('(Cross) power spectrum for all E-W baselines', y=0.95)
     fig.text(0.5, 0.04, 'Geometric delay [$\mu$s]', ha='center')
     fig.text(0.04, 0.5, 'Cross power spectrum [Amp RMS]', va='center', rotation='vertical')
@@ -422,4 +451,4 @@ def baseline_analysis_old(ps):
 
 # Add baseline functionality for EW, NS, 14m, 28m, individual baselines etc. - although this done before export to npz?
 # Flagging of visibilities
-# averaging over LST range? (40 second range max)
+# averaging over LAST range? (40 second range max)
