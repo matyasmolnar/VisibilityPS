@@ -1,18 +1,67 @@
-import sys, os, casac
+# module load miniconda3-4.5.4-gcc-5.4.0-hivczbz
+# source activate astroenv
+# scp /Users/matyasmolnar/HERA_Data/VisibilityPS/ps_analysis.py mdm49@login-cpu.hpc.cam.ac.uk:/rds/project/bn204/rds-bn204-asterics/mdm49
+
+import sys, os
+import astropy.stats
+import math
 import numpy as np
+import scipy
 from scipy import signal
 import matplotlib.pyplot as plt
-import pickle
-from __future__ import print_function
+import matplotlib
+import functools
+# import pickle
+# from __future__ import print_function
 
 # Input parameters:
 LAST = 3.31 # float
-IDRDay = 2458098 # int
-Average_IDR2 = True
+
+last_average = True
+last_average_period = 40 #seconds; chose between {20,60}
+mean_last = False
+median_last = True
+
+IDRDay = 2458098 # chose one of days, if no averaging
+
+mean_days = False
+median_days = True
+
+statistic_all_IDR2 = False # run statistics over all IDR2 Days?
+chosen_days = [2458098, 2458099, 2458101, 2458102, 2458103, 2458104, 2458105, 2458106, 2458107, 2458108,
+            2458110, 2458111, 2458112, 2458113, 2458116]
+
+sigma_clip_days = True
+sc_days_stds = 3.0
+
+sigma_clip_bl = True
+sc_bls_stds = 3.0
+
+channel_start = 100
+channel_end = 400
+
+# if last_end - last_start > 0.017:
+#     raise ValueError('Cannot average in time for more than 1 minute.')
+
+
+if mean_last == median_last:
+    raise ValueError('Chose either mean or median for the last statistic!')
+
+if mean_days == median_days:
+    raise ValueError('Chose either mean or median for the day statistic!')
+
+
+chan_range = np.arange(channel_start-1,channel_end) # index for channel & freqs arrays. Includes extremities.
+
+# faulty day: 2458109, 2458115, 2458140
+# last alignment wrong - wrong range of last
+
+IDR2_Days = [2458098, 2458099, 2458101, 2458102, 2458103, 2458104, 2458105, 2458106, 2458107, 2458108,
+            2458109, 2458110, 2458111, 2458112, 2458113, 2458114, 2458115, 2458116, 2458140]
 
 # # Loading npz file of single visibility dataset:
-# npz_file = np.load('/rds/project/bn204/rds-bn204-asterics/mdm49/IDRDays/zen.2458099.46852.xx.HH.ms.npz')
-# npz_file.files #['bl', 'vis', 'flags', 'LAST']
+# vis_data = np.load('/rds/project/bn204/rds-bn204-asterics/mdm49/IDR2_arrays_python/zen.2458099.46852.xx.HH.ms.npz')
+# vis_data.files #['bl', 'vis', 'flags', 'LAST']
 # vis_data['bl'] #gives baselines (of which there are 35) - same ones as specified in inBaselines in master_conversion_python.py
 # vis_data['vis'].shape #(35, 1, 1024, 60) #(baselines, ??, channels, LAST times)
 # vis_data['flags'] #same dimensions as vis
@@ -21,11 +70,9 @@ Average_IDR2 = True
 def find_nearest(array, value):
     array = np.asarray(array)
     idx = (np.abs(array - value)).argmin()
-    return idx, array[idx]
+    return idx, array[idx] # index of nearest value, nearest value
 
-
-
-# Loading npz file of single visibility dataset:
+# Loading npz file of all aligned visibilities
 vis_data = np.load('/rds/project/bn204/rds-bn204-asterics/mdm49/aligned/aligned_visibilities.npz')
 vis_data.files #['visibilities', 'baselines', 'last', 'days', 'flags']
 visibilities = vis_data['visibilities'] # shape: (220, 18, 35, 1024) = (last bins, day, baselines, channels)
@@ -40,36 +87,339 @@ bandwidth_end = 2.0e8
 resolution = 97656.25
 
 freqs = np.arange(bandwidth_start, bandwidth_end, resolution)
+freq_range = freqs[chan_range]
+
 channels = np.arange(0,1024, dtype=int)
 frc=np.zeros((2,1024))
 frc[0,:] = channels
 frc[1,:] = freqs
 
-if Average_IDR2 = True:
-    vis_avg = np.mean(visibilities, axis=1, dtype=np.complex_)
-    vis_medfilt = signal.medfilt(visibilities)
+# # Checking aligment of LASTs. Issue with missing consecutive sessions. Need to check calibration.
+# for i in range(0,last.shape[1]):
+#     print(i)
+#     print(last[0,i])
+#     print(last[-1,i])
+#     print('-----------------')
 
-# To Do
-# Modify PS function to work with above arrays
-# Add averaging functionality and chosing IDRDay, LST etc
-# Add baseline functionality for EW, NS, 14m, 28m, individual baselines etc. - although this done before export to npz?
+misaligned_days = [10,15,17]
+flags_mis = np.delete(np.arange(0,18), misaligned_days) # finding days to flag due to misalignment fault in align_lst.py script
+
+# flagging faulty days due to misalignment
+visibilities = visibilities[:,flags_mis,:,:]
+last = last[:,flags_mis]
+days = days[flags_mis]
+flags = flags[:,flags_mis,:,:]
+
+# only considering specified channel range
+vis_chan_range = visibilities[:,:,:,chan_range]
+channels = channels[chan_range]
+
+
+# averaging over LST
+if last_average:
+    a = 1
+    last_bound_h = last_average_period / 60. / 60. / 1.5 # here 1.5 obtained from trial and error to match desired time averaging with actual averaging
+    # last_mask_array = np.empty_like(vis_chan_range, dtype=bool)
+    dims = np.zeros_like(vis_chan_range)
+    test_idx = np.squeeze(np.where((last[:,0] < LAST + last_bound_h) & (last[:,0] > LAST - last_bound_h)))
+    vis_lst_chan_range = dims[test_idx,:,:,:]
+    actual_avg_all =[]
+    for i in range(last.shape[1]):
+        chosen_last_idx = np.squeeze(np.where((last[:,i] < LAST + last_bound_h) & (last[:,i] > LAST - last_bound_h)))
+        actual_avg = (last[:,i][chosen_last_idx[-1]] - last[:,i][chosen_last_idx[0]]) * 60**2
+        actual_avg_all.append(actual_avg)
+        # print('Actual average in LAST for chosen day(s) '+str(days[i])+' is '+str(actual_avg)+' seconds.')
+        # print(chosen_last_idx)
+        vis_lst_chan_range[:,i,:,:] = vis_chan_range[chosen_last_idx,i,:,:]
+    print('Actual average in LAST for chosen days is ~'+str(np.int(np.mean(actual_avg_all)))+' seconds.')
+    if (np.max(actual_avg_all) - np.min(actual_avg_all)) > 0.1:
+        raise ValueError('Combined exposure by joining consecutive sessions inconsistent day to day. Check actual_avg_all values.')
+
+# chosing specific LST
+elif not last_average:
+    a = 0
+    vis_lst_chan_range = vis_chan_range[find_nearest(last[:,0], LAST)[0], :, :, :]
+
+# 0. + 0.j in vis_lst_chan_range
+
+
+# vis_flagged = vis_range[flags] # flagging visibilities - flagging currently not working...
+vis_amps = np.absolute(vis_lst_chan_range) # taking visibility amplitudes (absolute value of complex visibility)
+dims = np.zeros_like(vis_amps)
+# test by plotting visibility amplitude vs channel
+# test_vis = np.absolute(visibilities[find_nearest(last[:,np.where(days == IDRDay)][0][0], LAST)[0], np.where(days == IDRDay)[0][0], :, :]) #dimensions (baselines, frequency)
+
+
+def plot_test_vis():
+    plt.figure()
+    # mean over LAST and baselines
+    plt.plot(channels, np.mean(np.mean(np.squeeze(vis_amps), axis=0), axis=0))
+    plt.xlabel('Channels')
+    plt.ylabel('Visibility Amplitude')
+        # plt.savefig('test.pdf', format='pdf')
+    plt.show()
+
+
+def plot_test_single_vis():
+    plt.figure()
+    plt.plot(channels, test_vis[10,:])
+    plt.show()
+
+
+# sigma clipping of visibilities over days and baselines, with sigma clipping done about the median value for the data
+# sigma clipping over days
+if sigma_clip_days: # sigma clip over days - leaving LAST bins, baselines and frequencies intact
+    # what does axis here mean? does not seem to clip as required
+    # vis_amps = astropy.stats.sigma_clip(vis_amps, sigma=sc_days_stds, maxiters=None, cenfunc='median', stdfunc='std', axis=1, masked=True, return_bounds=False)
+    dummy = dims
+    for j in range(0, vis_amps.shape[1+a]): # iterate over baselines
+        for k in range(0, vis_amps.shape[2+a]): # iterate over frequencies
+            # or use:
+            # vis_amps[i,:,j,k] = scipy.stats.sigmaclip(vis_amps[i,:,j,k], low=sc_days_stds, high=sc_days_stds)
+            # although this does not mask array, does not retain dimensionality
+            if last_average: # dimensions of vis_amps depends on last_average (+1 dimensions if True)
+                for m in range(0, vis_amps.shape[0]): # iterate over lst
+                    l = astropy.stats.sigma_clip(vis_amps[m,:,j,k], sigma=sc_days_stds, maxiters=None, cenfunc='median', stdfunc='std', masked=True, return_bounds=False)
+                    np.ma.set_fill_value(l,-999)
+                    dummy[m,:,j,k] = l.filled()
+            elif not last_average:
+                l = astropy.stats.sigma_clip(vis_amps[:,j,k], sigma=sc_days_stds, maxiters=None, cenfunc='median', stdfunc='std', masked=True, return_bounds=False)
+                np.ma.set_fill_value(l,-999)
+                dummy[:,j,k] = l.filled()
+    vis_amps = np.ma.masked_where(dummy==-999, dummy)
+
+if -999 in vis_amps.data:
+    days_clipped = True
+    count_days_clipped = len(np.where(vis_amps.data == -999)[0])
+    print('Day clipping has been applied.')
+else:
+    days_clipped = False
+    print('No day clipping applied; all data within '+str(sc_days_stds)+' sigma for each day.')
+
+
+# sigma clipping over baselines
+if sigma_clip_bl: # sigma clip over days - leaving LAST bins, baselines and frequencies intact
+    # vis_amps = astropy.stats.sigma_clip(vis_amps, sigma=sc_bls_stds, maxiters=None, cenfunc='median', stdfunc='std', axis=2, masked=False, return_bounds=False)
+    dummy_2 = dims
+    for j in range(0, vis_amps.shape[0]): # iterate over days
+        for k in range(0, vis_amps.shape[2]): # iterate over frequencies
+            if last_average:
+                for m in range(0, vis_amps.shape[0]): # iterate over lst
+                    l = astropy.stats.sigma_clip(vis_amps[m,j,:,k], sigma=sc_bls_stds, maxiters=None, cenfunc='median', stdfunc='std', masked=True, return_bounds=False)
+                    np.ma.set_fill_value(l,-999)
+                    dummy_2[m,j,:,k] = l.filled()
+            elif not last_average:
+                l = astropy.stats.sigma_clip(vis_amps[j,:,k], sigma=sc_bls_stds, maxiters=None, cenfunc='median', stdfunc='std', masked=True, return_bounds=False)
+                np.ma.set_fill_value(l,-999)
+                dummy_2[j,:,k] = l.filled()
+    vis_amps = np.ma.masked_where(dummy_2==-999, dummy_2)
+
+if -999 in vis_amps.data:
+    if days_clipped:
+        if len(np.where(vis_amps.data == -999)[0]) > count_days_clipped:
+            print('Baseline clipping has been applied.')
+        else:
+            print('No baseline clipping applied; all data within '+str(sc_days_stds)+' sigma for each day.')
+    elif not days_clipped:
+        print('No baseline clipping applied; all data within '+str(sc_days_stds)+' sigma for each baseline.')
+
+
+# statistic over last
+if last_average:
+    if mean_last:
+        vis_amps = np.ma.mean(vis_amps, axis=0)
+    elif median_last:
+        vis_amps = np.ma.median(vis_amps, axis=0)
+
+
+# splitting array of days into 2 (for cross power spectrum between mean/median of two halves)
+vis_amps_halves = np.array_split(vis_amps,2, axis=0) # split visibilities array into two sub-arrays of (near) equal days
+day_halves = np.array_split(days,2)
+
+# mean statistic over days
+def day_statistic(vis_array, selected_days):
+    if mean_days:
+        if statistic_all_IDR2:
+            vis_avg = np.ma.mean(vis_array, axis=0)
+        else:
+            day_flags = []
+            for i in range(0,len(selected_days)):
+                day_flags.append(selected_days[i] in chosen_days)
+            day_flags = np.array(day_flags, dtype=bool)
+            vis_avg = np.ma.mean(vis_array[day_flags, :, :], axis=0)
+    # median statistic
+    elif median_days:
+        if statistic_all_IDR2:
+            vis_avg = np.ma.median(vis_array, axis=0)
+        else:
+            day_flags = []
+            for i in range(0,len(selected_days)):
+                day_flags.append(selected_days[i] in chosen_days)
+            day_flags = np.array(day_flags, dtype=bool)
+            vis_avg = np.ma.median(vis_array[day_flags, :, :], axis=0)
+    # chosing single Day
+    else:
+        vis_avg = vis_array[np.where(days == IDRDay)[0][0] ,:,:]
+    return vis_avg
+
+
+vis_half1 = day_statistic(vis_amps_halves[0], day_halves[0]).data
+vis_half2 = day_statistic(vis_amps_halves[1], day_halves[1]).data
+
+vis_amps_final =  day_statistic(vis_amps, days).data
+
+
+def compute_cps():
+    # Length of the FFT used
+    infft = 2**7
+
+    # Finding dimension of returned delays
+    delay_test, Pxy_spec_test = signal.csd(vis_half1[1,:], vis_half2[1,:], fs=1./resolution, window='flattop', scaling='spectrum', nperseg=infft, detrend='linear')
+    delayshape = delay_test.shape[0] #how many data points the signal.periodogram calculates
+    # print(delayshape)
+    vis_cps = np.zeros((vis_half1.shape[0], 2, delayshape)) # dimensions are [baselines, (delay, Pxx_spec), delayshape]
+    for i in range(0, vis_half1.shape[0]): # Iterating over all baselines
+        delay, Pxy_spec = signal.csd(vis_half1[i,:], vis_half2[i,:], fs=1./resolution, window='flattop', scaling='spectrum', nperseg=infft, detrend='linear')
+        Pxy_spec = np.absolute(Pxy_spec)
+        vis_cps[i,:,:] = [delay, Pxy_spec]
+    return vis_cps
+
+# cps returns complex Pxy...?
 
 def compute_ps():
     # Length of the FFT used
     infft = 2**7
 
     # Finding dimension of returned delays
-    delay_test, Pxx_spec_test = signal.periodogram(vis_amps[1,:], 1./resolution, 'flattop', scaling='spectrum', nfft=infft)
+    delay_test, Pxx_spec_test = signal.periodogram(vis_amps_final[1,:], fs=1./resolution, window='flattop', scaling='spectrum', nfft=infft, detrend='linear')
     delayshape = delay_test.shape[0] #how many data points the signal.periodogram calculates
     # print(delayshape)
-    vis_ps = np.zeros((vis_amps.shape[0], 2, delayshape)) # dimensions are [baselines, (delay, Pxx_spec), delayshape]
-    for i in range(0, vis_amps.shape[0]): # Iterating over all baselines
-        delay, Pxx_spec = signal.periodogram(vis_amps[i,:], 1./vis_res, 'flattop', scaling='spectrum', nfft=infft, detrend='linear')
+    vis_ps = np.zeros((vis_amps_final.shape[0], 2, delayshape)) # dimensions are [baselines, (delay, Pxx_spec), delayshape]
+    for i in range(0, vis_amps_final.shape[0]): # Iterating over all baselines
+        delay, Pxx_spec = signal.periodogram(vis_amps_final[i,:], fs=1./resolution, window='flattop', scaling='spectrum', nfft=infft, detrend='linear')
         vis_ps[i,:,:] = [delay, Pxx_spec]
         # vis_ps[i,0,:] = delay
         # vis_ps[i,1,:] = Pxx_spec
     return vis_ps
 
-power_spectra = compute_ps()
+power_spectrum = compute_ps() # first axis is baselines
+cross_power_spectrum = compute_cps()
 
-print "power_spectra numpy ndarray has dimensions", power_spectra.shape
+# print "power_spectra numpy ndarray has dimensions", power_spectra.shape
+
+cps_mean_ew = np.mean(cross_power_spectrum, axis=0)
+cps_median_ew = np.median(cross_power_spectrum, axis=0)
+
+def plot_statistic_cps(stat):
+    plt.figure()
+    plt.semilogy(stat[0]*1e6, np.sqrt(stat[1]))
+    plt.xlabel('Geometric delay [$\mu$s]')
+    plt.ylabel('Cross power spectrum [Amp RMS]')
+    if str(stat) == 'cps_mean_ew':
+        plt.title('Mean cross power spectrum over baselines')
+    elif str(stat) == 'cps_median_ew':
+        plt.title('Median cross power spectrum over baselines')
+    # plt.savefig('test.pdf', format='pdf')
+    plt.ion()
+    plt.show()
+plot_statistic_cps(cps_mean_ew)
+# plot_statistic_cps(cps_median_ew)
+
+# def plot_mean_cps():
+#     plt.figure()
+#     plt.semilogy(cps_mean_ew[0]*1e6, np.sqrt(cps_mean_ew[1]))
+#     plt.xlabel('Geometric delay [$\mu$s]')
+#     plt.ylabel('Cross power spectrum [Amp RMS]')
+#     plt.title('Mean cross power spectrum over baselines')
+#     # plt.savefig('test.pdf', format='pdf')
+#     plt.ion()
+#     plt.show()
+# # plot_mean_cps()
+#
+# def plot_median_cps():
+#     plt.figure()
+#     plt.semilogy(cps_median_ew[0]*1e6, np.sqrt(cps_median_ew[1]))
+#     plt.xlabel('Geometric delay [$\mu$s]')
+#     plt.ylabel('Cross power spectrum [Amp RMS]')
+#     # plt.savefig('test.pdf', format='pdf')
+#     plt.title('Median cross power spectrum over baselines')
+#     plt.ion()
+#     plt.show()
+# plot_median_cps()
+
+# plot_median_ps()
+
+def factors(n):
+    return np.asarray(sorted(functools.reduce(list.__add__, ([i, n//i] for i in range(1, int(n**0.5) + 1) if n % i == 0))))
+
+
+def plot_size(x):
+    no_rows = int(find_nearest(factors(x), x/2.)[1])
+    # if no_rows == 1:
+    #   statement to break up into multiple rows etc.
+    no_cols = int(x / no_rows)
+    return no_rows, no_cols
+plot_dim = plot_size(len(baselines))
+
+
+def baseline_analysis(ps):
+    fig_path = '/rds/project/bn204/rds-bn204-asterics/mdm49/baseline_analysis.pdf'
+    if os.path.isfile(fig_path):
+        os.remove(fig_path)
+    no_rows = plot_dim[0]
+    no_cols = plot_dim[1]
+    fig, axs = plt.subplots(nrows=7, ncols=5, sharex=True, sharey=True, squeeze=False)
+    for i in range(no_rows):
+        for j in range(no_cols):
+            axs[i,j].semilogy(cross_power_spectrum[(i*no_cols)+j,0,:]*1e6, np.sqrt(cross_power_spectrum[(i*no_cols)+j,1,:]), linewidth=1)
+            # axs[i,j].legend([str(baselines[(i*no_cols)+j])],loc="upper right", prop={'size': 6})
+
+            axs[i,j].set_xticks(np.arange(0,6))
+            axs[i,j].set_xticks(np.arange(0,6,0.2), minor=True)
+            axs[i,j].set_yticks(np.power(np.ones(5)*10,-np.arange(1,6)))
+            minors = []
+            for p in range(6):
+                for q in range(2,10):
+                    minors.append(q * (10**(-1*p)))
+            minors = np.array(minors)
+            axs[i,j].set_yticks(minors, minor=True)
+            axs[i,j].xaxis.set_tick_params(width=1)
+            axs[i,j].yaxis.set_tick_params(width=1)
+    plt.suptitle('(Cross) power spectrum for all E-W baselines', y=0.95)
+    fig.text(0.5, 0.04, 'Geometric delay [$\mu$s]', ha='center')
+    fig.text(0.04, 0.5, 'Cross power spectrum [Amp RMS]', va='center', rotation='vertical')
+    # fig.tight_layout()
+    fig.set_size_inches(w=11,h=7.5)
+    plt.savefig(fig_path, format='pdf', dpi=300)
+    plt.ion()
+    plt.show()
+baseline_analysis(cross_power_spectrum)
+
+
+def baseline_analysis_old(ps):
+    os.remove('/rds/project/bn204/rds-bn204-asterics/mdm49/baseline_analysis.pdf')
+    plt.figure()
+    label_size = 6
+    matplotlib.rcParams['xtick.labelsize'] = label_size
+    # plt.tight_layout
+    for i in range(0,len(baselines)):
+        plt.subplot(7,5,i+1)# sharex=True, sharey=True)
+        plt.semilogy(ps[i,0,:]*1e6, np.sqrt(ps[i,1,:]))
+        plt.legend([str(baselines[i])],loc="upper right", prop={'size': 6})#, fontsize='x-small')
+    plt.subplots_adjust(hspace=0.6, wspace=0.6)
+    # plt.xlabel('Geometric delay [$\mu$s]')
+    # plt.ylabel('Power spectrum [Amp RMS]')
+    plt.suptitle('(Cross) power spectrum for all E-W baselines')
+    plt.savefig('baseline_analysis.pdf', format='pdf')
+    plt.ion()
+    plt.show()
+# baseline_analysis_old(cross_power_spectrum)
+# baseline_analysis_old(power_spectrum)
+
+# rm ~/Desktop/baseline_analysis.pdf
+# scp mdm49@login-cpu.hpc.cam.ac.uk:/rds/project/bn204/rds-bn204-asterics/mdm49/baseline_analysis.pdf ~/Desktop/
+
+
+# Add baseline functionality for EW, NS, 14m, 28m, individual baselines etc. - although this done before export to npz?
+# Flagging of visibilities
+# averaging over LST range? (40 second range max)

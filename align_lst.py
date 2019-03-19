@@ -12,7 +12,7 @@
 # scp /Users/matyasmolnar/HERA_Data/VisibilityPS/align_lst.py mdm49@login-cpu.hpc.cam.ac.uk:/rds/project/bn204/rds-bn204-asterics/mdm49
 #
 # running script
-# casapython align_lst.py --lst_start 3.05 --lst_end 3.71 --date_start 2458098 --date_end 2458140 --output_file 'aligned_visibilities' /rds/project/bn204/rds-bn204-asterics/mdm49/IDR2_arrays_python/ /rds/project/bn204/rds-bn204-asterics/mdm49/aligned/
+# casapython align_lst.py --lst_start 3.05 --lst_end 3.71 --date_start 2458098 --date_end 2458140 --output_file 'aligned_raw_visibilities' /rds/project/bn204/rds-bn204-asterics/mdm49/IDR2_raw/ /rds/project/bn204/rds-bn204-asterics/mdm49/aligned/
 
 
 from __future__ import print_function

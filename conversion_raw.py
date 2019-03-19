@@ -1,11 +1,5 @@
 # copying over to CSD3:
-# scp -r /Users/matyasmolnar/HERA_Data/VisibilityPS/master_conversion_python.py mdm49@login-cpu.hpc.cam.ac.uk:/rds/project/bn204/rds-bn204-asterics/mdm49
-# scp -r /Users/matyasmolnar/HERA_Data/VisibilityPS/slurm_submit_python.peta4-skylake mdm49@login-cpu.hpc.cam.ac.uk:/rds/project/bn204/rds-bn204-asterics/mdm49
-# scp /Users/matyasmolnar/HERA_Data/VisibilityPS/{master_conversion_python.py,slurm_submit_python.peta4-skylake} mdm49@login-cpu.hpc.cam.ac.uk:/rds/project/bn204/rds-bn204-asterics/mdm49
-# sintr -A CASTROSKA-SL2-CPU -p skylake -n1 -t 2:00:0 --exclusive
-
-# scp mdm49@login-cpu.hpc.cam.ac.uk:/rds/project/bn204/rds-bn204-asterics/mdm49/baseline_analysis.pdf ~/Desktop/
-
+# scp /Users/matyasmolnar/HERA_Data/VisibilityPS/{conversion_raw.py,slurm_submit_raw.peta4-skylake} mdm49@login-cpu.hpc.cam.ac.uk:/rds/project/bn204/rds-bn204-asterics/mdm49
 
 import casa
 import casac
@@ -24,34 +18,23 @@ from heracasa.data import uvconv
 from recipe import casatasks as c
 from recipe import repo
 
-#GCCleanMask='ellipse[[17h45m00.0s,-29d00m00.00s ], [ 11deg, 4deg ] , 30deg]'
-FornaxACleanMask = 'ellipse[[3h22m41.8s,-37d12m29.52s], [ 1deg, 1deg ] , 10deg]'
 
 DataDir="/rds/project/bn204/rds-bn204-asterics/HERA/data"
-procdir="/rds/project/bn204/rds-bn204-asterics/mdm49/IDR2_calib_v1"
-
-# c.repo.REPODIR="/rds/project/bn204/rds-bn204-asterics/cache"
-
-# testing locally. have created same directory hierarchy on hard drive
-# DataDir="/Volumes/TOSHIBA_EXT/HERA_Data"
-# procdir="/Volumes/TOSHIBA_EXT/HERA_Data/calibrated"
+procdir="/rds/project/bn204/rds-bn204-asterics/mdm49/IDR2_raw"
 
 Pol="xx"
 
-# where is this from?
-# IDRDays=[2458098,2458099,2458143,2458144,2458145,2458146,2458147,2458148,2458149,2458150,2458151,2458152,2458153,2458154,2458155,2458156,2458157,2458158,2458159,2458160]
-
 # IDR2 DATASET
 IDR2=[2458098, 2458099, 2458101, 2458102, 2458103, 2458104, 2458105, 2458106, 2458107, 2458108, 2458109, 2458110, 2458111, 2458112, 2458113, 2458114, 2458115, 2458116, 2458140]
-# IDRDays=[2458106, 2458107, 2458108, 2458109, 2458110, 2458111, 2458112, 2458113, 2458114, 2458115, 2458116, 2458140]
-# need to do 2458114 - not exported..
-
+IDRDays=[2458116, 2458140]
+#done 2458099, 2458101, 2458102, 2458103, 2458104, 2458105, 2458106, 2458107
 # InTimes=[12552]
 
 InData=[]
 
-for d in IDR2:
+for d in IDRDays:
     [InData.append(g) for g in glob.glob(os.path.join(DataDir,str(d),Pol,"*.uv"))]
+
 
 # # Selecting times
 # for d in IDRDays:
@@ -59,20 +42,13 @@ for d in IDR2:
 #         [InData.append(g) for g in glob.glob(os.path.join(DataDir,str(d),Pol,"*."+str(t)+"*.uv"))]
 
 InData = sorted(InData)
-
-# removing datasets that have already been converted
-InData_filtered = list(InData) #copying list of all sessions
-for IDR2_session in InData:
-    if os.path.exists(os.path.join(procdir,os.path.split(IDR2_session)[-1][:-len('uv')]+'ms.npz')):
-        InData_filtered.remove(IDR2_session)
-
-InData = InData_filtered
+#print(InData)
 
 #processing specification
 ProcessData=True
 
 #Multiprocessing specification
-NUMBER_OF_CORES = len(IDRDays) # reduce number of cores
+NUMBER_OF_CORES = 8 #len(IDRDays) # reduce number of cores
 
 RefAnt="53" #as a string
 # Deleted antennas are 86, 88, 137, 139
@@ -129,14 +105,12 @@ for i in range(len(bad_ants[1,:])):
     for j in range(len(bad_ants[1,i])):
         bad_ants_casa[1,i][j] = bad_ants[1,i][j] + 1
 
-
-# add +1 to HERA antenna number
+# Flagging measurement sets
 def gcflagdata(msin, IDRDay):
     bad_ants_index = np.where(bad_ants_casa[0,:] == IDRDay)[0][0]
     print('Flagged antennas for IDRDay '+str(IDRDay)+' are '+str(bad_ants[1,bad_ants_index]))
     casa.flagdata(msin, flagbackup=True, mode='manual', antenna=str(bad_ants_casa[1,bad_ants_index]).replace("[","").replace("]",""))
-    # flagdata(msin, flagbackup=True, mode='manual', antenna='1, 137, 51, 3')
-    #cutting visibilities at extremes of bandwidth
+    # cutting visibilities at extremes of bandwidth
     casa.flagdata(msin, flagbackup=True, mode='manual', spw='0:0~65')
     casa.flagdata(msin, flagbackup=True, mode='manual', spw='0:930~1024')
     casa.flagdata(msin, autocorr=True)
@@ -145,58 +119,16 @@ def gcflagdata(msin, IDRDay):
 
 # fringe-rotation to Fornax A:
 def fringerot(din):
-    """Fringe Rotate to Fornax A:"""
+    """Fringe Rotate to Fornax A"""
     casa.fixvis(din, din, phasecenter='J2000 03h22m41.789s -37d12m29.52s')
     return din
-
-
-# model for Fornax A
-def mkinitmodel():
-    """ Initial model: just a point source in Fornax A direction"""
-    os.system('rm -rf FornaxA.cl')
-    casa.componentlist.done()
-    casa.componentlist.addcomponent(flux=1.0,
-                    fluxunit='Jy',
-                    shape='point',
-                    dir='J2000 03h22m41.789s -37d12m29.52s')
-    casa.componentlist.rename('FornaxA.cl')
-    casa.componentlist.close()
-
-
-# initial calibration
-def calname(m, c):
-    #build calibrator name based on filename
-    return os.path.basename(m)+c+'.cal'
-
-
-def calinitial(msin):
-    "Initial calibration of the data set"
-
-    # Fill the model column
-    casa.ft(msin, complist='FornaxA.cl', usescratch=True)
-
-    kc=calname(msin, 'K') #delays
-    gc=calname(msin, 'G') #gain
-
-    casa.gaincal(vis=msin, caltable=kc, gaintype='K', solint='inf', refant='11', minsnr=1)#, spw='0:100~130,0:400~600')
-    # spw not necessary
-    # ensure reference antenna exists and isn't faulty
-    casa.gaincal(vis=msin, caltable=gc, gaintype='G', solint='inf', refant='11', minsnr=1, calmode='ap', gaintable=kc)
-    casa.applycal(msin, gaintable=[kc, gc])
-    return [kc, gc]
-
-
-def dobandpass(msin):
-    bc=calname(msin, 'B')
-    casa.bandpass(vis=msin, minsnr=1, solnorm=False, bandtype='B', caltable=bc)
-    casa.applycal(msin, gaintable=[bc])
-    return bc
 
 
 def cleanspace():
     #deletes all files in procdir
     shutil.rmtree(procdir, ignore_errors=True)
     os.mkdir(procdir)
+
 
 def genvisibility(fin,**kwargs):
     fout=os.path.split(fin)[-1]+".npz"
@@ -216,19 +148,11 @@ def npz_conversion(uvin):
     gcflagdata(ms, IDRDay_of_data)
     print('ms data succesfully flagged: '+str(ms))
     fringerot(ms)
-    cals1=calinitial(ms)
-    print('Gain and delay calibration tables produced: '+str(cals1))
-    cals2=dobandpass(ms)
-    print('Calibration complete')
     print('Saving calibrated data to npz array')
     npz = genvisibility(ms, baseline=inBaselines, alist=inAntenna)
     # shutil.rmtree(ms)
     print('IDR dataset '+str(IDRDay_of_data)+'.'+str(time_of_data)+' saved to npz array')
     return npz
-
-
-# checking quality of calibrated data with imaging and gain / delay calibration plots
-# clean(vis=msin, niter=0, imagename='test.img', weighting='briggs', robust=0, imsize=[512,512], cell=['250arcsec'], mode='mfs')
 
 
 def multiprocess_wrapper(files):
@@ -271,50 +195,3 @@ def main():
         npz_conversion(file)
 
 if ProcessData: main()
-
-
-###################################################
-
-# def mjd_to_jd(zen):
-#     casa.tb.open(zen)
-#     time_obs = tb.getcol("TIME")
-#     # exposure = tb.getcol("EXPOSURE")
-#     casa.tb.close()
-#
-#     time_stamp = time_obs[0] # units of second, follows MJD
-#     mjd_day = time_stamp / 60 / 60 / 24
-#     jd_day = au.mjdToJD(mjd_day)
-#     return(jd_day)
-
-
-# # main script for batch calibration - no multiprocess
-# def conversion(fin):
-#     cleanspace()
-#     os.chdir(procdir)
-#     ms=[cv(x) for x in fin]
-#     print('ms datasets to calibrate: '+str(ms))
-#     flagged = []
-#     for x in ms:
-#         # IDRDay_of_data = int(os.path.basename(os.path.dirname(os.path.dirname(x))))
-#         # use this if working with files of the form 'zen.2458098.12552.xx.HH.ms':
-#         IDRDay_of_data = int(x.split('.')[1])
-#         time_of_data = int(x.split('.')[2])
-#         # # use this if working with files stored in the cache:
-#         # jd = mjd_to_jd(x)
-#         # IDRDay_of_data = int(jd)
-#         # time_of_data = jd - IDRDay_of_data
-#
-#         print('Flagging IDR dataset '+str(IDRDay_of_data)+'.'+str(time_of_data))
-#         gcflagdata(x, IDRDay_of_data)
-#         flagged.append(x)
-#     print('ms data succesfully flagged: '+str(flagged))
-#     ms=[fringerot(x) for x in flagged]
-#     mkinitmodel()
-#     cals1=[calinitial(x) for x in ms]
-#     print('Gain and delay calibration tables produced: '+str(cals1))
-#     cals2=[dobandpass(x) for x in ms]
-#     print('Calibration complete')
-#     print('Saving calibrated data to npz array')
-#     for x in ms:
-#         genvisibility(x, baseline=inBaselines, alist=inAntenna)
-#         shutil.rmtree(x)
