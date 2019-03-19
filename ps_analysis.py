@@ -27,7 +27,7 @@ import functools
 LAST = 3.31 # float
 
 last_average = True
-last_average_period = 20 #seconds; chose between {20,60}
+last_average_period = 40 #seconds; chose between {20,60}
 last_statistic = 'median'
 
 IDRDay = 2458098 # chose one of days, if no averaging
@@ -75,6 +75,9 @@ if mean_last == median_last:
 
 if mean_days == median_days:
     raise ValueError('Chose either mean or median for the day statistic!')
+
+if last_average_period < 20 or last_average_period > 60:
+     raise ValueError('Chose LAST averaging period to be between 20 and 60 seconds.')
 
 
 chan_range = np.arange(channel_start-1,channel_end) # index for channel & freqs arrays. Includes extremities.
@@ -141,12 +144,14 @@ flags = flags[:,flags_mis,:,:]
 vis_chan_range = visibilities[:,:,:,chan_range]
 channels = channels[chan_range]
 
+# parameter for getting correct grouping of LASTs from last_average_period
+if last_average_period > 20
 
-# averaging over LAST
+# indexing to obtain LASTs in last_average_period
 if last_average:
     a = 1 # for index change later - array will reduced in dimension if indexed for 1 specific LAST
     # selecting nearest LAST sessions to average over nearest {20,60} second period (try for half either side)
-    last_bound_h = last_average_period / 60. / 60. / 1.5 # here 1.5 obtained from trial and error to match desired time averaging with actual averaging
+    last_bound_h = last_average_period / 60. / 60. / 1.2 # here 1.5 obtained from trial and error to match desired time averaging with actual averaging
     # last_mask_array = np.empty_like(vis_chan_range, dtype=bool)
     dims = np.zeros_like(vis_chan_range)
     # find number of LAST bins within last_average_period, and index array accordingly
@@ -154,16 +159,17 @@ if last_average:
     vis_last_chan_range = dims[test_idx,:,:,:]
     actual_avg_all =[]
     for day in range(last.shape[1]):
+        # getting indices of LAST bins that are within last_average_period
         chosen_last_idx = np.squeeze(np.where((last[:,day] < LAST + last_bound_h) & (last[:,day] > LAST - last_bound_h)))
+        # finding difference between first and last LAST bins used for averaging
         actual_avg = (last[:,day][chosen_last_idx[-1]] - last[:,day][chosen_last_idx[0]]) * 60**2
+        # adding all periods to an array for averaging later to check
         actual_avg_all.append(actual_avg)
         # print('Actual average in LAST for chosen day(s) '+str(days[i])+' is '+str(actual_avg)+' seconds.')
-        # print(chosen_last_idx)
         vis_last_chan_range[:,day,:,:] = vis_chan_range[chosen_last_idx,day,:,:]
     print('Actual average in LAST for chosen days is ~'+str(np.int(np.mean(actual_avg_all)))+' seconds.')
     if (np.max(actual_avg_all) - np.min(actual_avg_all)) > 0.1:
         raise ValueError('Combined exposure by joining consecutive sessions inconsistent day to day. Check actual_avg_all values.')
-
 # chosing specific LAST
 elif not last_average:
     a = 0
@@ -442,8 +448,6 @@ def baseline_analysis_old(ps):
     plt.savefig('baseline_analysis.pdf', format='pdf')
     plt.ion()
     plt.show()
-# baseline_analysis_old(cross_power_spectrum)
-# baseline_analysis_old(power_spectrum)
 
 # rm ~/Desktop/baseline_analysis.pdf
 # scp mdm49@login-cpu.hpc.cam.ac.uk:/rds/project/bn204/rds-bn204-asterics/mdm49/baseline_analysis.pdf ~/Desktop/
