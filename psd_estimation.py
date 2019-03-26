@@ -1,5 +1,29 @@
-import numpy as np
-import scipy.fftpack as sf
+from scipy import signal
+from scipy import fftpack as sf
+
+def corrfn_fft(data, dwei, ncorr=None):
+    '''Compute raw correlation function using FFT.'''
+    nsamp = len(data)
+    if ncorr is None:
+        ncorr = nsamp
+    nfft = sf.next_fast_len(2*nsamp-1)
+    data_ps = np.abs(np.fft.rfft(data, n=nfft))**2
+    dwei_ps = np.abs(np.fft.rfft(dwei, n=nfft))**2
+    corr = np.fft.irfft(data_ps, n=nfft)[0:ncorr]
+    cwei = np.fft.irfft(dwei_ps, n=nfft)[0:ncorr]
+    return corr, cwei
+
+def corrfn_rsp(data, dwei, ncorr=None):
+    '''Compute raw correlation function in real space.'''
+    nsamp = len(data)
+    if ncorr is None:
+        ncorr = nsamp
+    corr = np.zeros(ncorr)
+    cwei = np.zeros(ncorr)
+    for i in range(ncorr):
+        corr[i] = np.sum(data[i:]*data[:nsamp-i])
+        cwei[i] = np.sum(dwei[i:]*dwei[:nsamp-i])
+    return corr, cwei
 
 def psd_est(tsamp, data, dwei, ncorr=None, use_fft=True):
     '''Make estimate of power spectral density.'''
@@ -43,27 +67,3 @@ def psd_est(tsamp, data, dwei, ncorr=None, use_fft=True):
     psd = np.fft.rfft(tmp, n=nfft).real * tsamp
 
     return psd
-
-def corrfn_fft(data, dwei, ncorr=None):
-    '''Compute raw correlation function using FFT.'''
-    nsamp = len(data)
-    if ncorr is None:
-        ncorr = nsamp
-    nfft = sf.next_fast_len(2*nsamp-1)
-    data_ps = np.abs(np.fft.rfft(data, n=nfft))**2
-    dwei_ps = np.abs(np.fft.rfft(dwei, n=nfft))**2
-    corr = np.fft.irfft(data_ps, n=nfft)[0:ncorr]
-    cwei = np.fft.irfft(dwei_ps, n=nfft)[0:ncorr]
-    return corr, cwei
-
-def corrfn_rsp(data, dwei, ncorr=None):
-    '''Compute raw correlation function in real space.'''
-    nsamp = len(data)
-    if ncorr is None:
-        ncorr = nsamp
-    corr = np.zeros(ncorr)
-    cwei = np.zeros(ncorr)
-    for i in range(ncorr):
-        corr[i] = np.sum(data[i:]*data[:nsamp-i])
-        cwei[i] = np.sum(dwei[i:]*dwei[:nsamp-i])
-    return corr, cwei

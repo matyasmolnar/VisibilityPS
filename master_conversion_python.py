@@ -1,10 +1,5 @@
 # copying over to CSD3:
-# scp -r /Users/matyasmolnar/HERA_Data/VisibilityPS/master_conversion_python.py mdm49@login-cpu.hpc.cam.ac.uk:/rds/project/bn204/rds-bn204-asterics/mdm49
-# scp -r /Users/matyasmolnar/HERA_Data/VisibilityPS/slurm_submit_python.peta4-skylake mdm49@login-cpu.hpc.cam.ac.uk:/rds/project/bn204/rds-bn204-asterics/mdm49
 # scp /Users/matyasmolnar/HERA_Data/VisibilityPS/{master_conversion_python.py,slurm_submit_python.peta4-skylake} mdm49@login-cpu.hpc.cam.ac.uk:/rds/project/bn204/rds-bn204-asterics/mdm49
-# sintr -A CASTROSKA-SL2-CPU -p skylake -n1 -t 2:00:0 --exclusive
-
-# scp mdm49@login-cpu.hpc.cam.ac.uk:/rds/project/bn204/rds-bn204-asterics/mdm49/baseline_analysis.pdf ~/Desktop/
 
 
 import casa

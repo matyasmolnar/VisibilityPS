@@ -18,14 +18,14 @@ import sys, os
 import astropy.stats
 import math
 import numpy as np
-import scipy
 from scipy import signal
+from scipy import fftpack as sf
 import matplotlib.pyplot as plt
 import matplotlib
 import functools
 import seaborn as sns; sns.set(); sns.set_style("whitegrid")
-# import pickle
-# from __future__ import print_function
+from psd_estimation import *
+
 
 #####################################################################################################
 
@@ -318,7 +318,6 @@ vis_amps_final =  day_statistic(vis_amps, days).data
 
 
 def power_spectrum(data1, data2 = None, window = 'hann', length = None, scaling = 'spectrum', detrend = False):
-
     # CPS
     if data2 is not None:
         # Finding dimension of returned delays
@@ -330,7 +329,6 @@ def power_spectrum(data1, data2 = None, window = 'hann', length = None, scaling 
             delay, Pxy_spec = signal.csd(data1[i,:], data2[i,:], fs=1./resolution, window=window, scaling=scaling, nperseg=length, detrend=detrend)
             Pxy_spec = np.absolute(Pxy_spec)
             vis_ps[i,:,:] = [delay, Pxy_spec]
-
     # PS
     else:
         # Finding dimension of returned delays
@@ -343,15 +341,16 @@ def power_spectrum(data1, data2 = None, window = 'hann', length = None, scaling 
             vis_ps[i,:,:] = [delay, Pxx_spec]
             # vis_ps[i,0,:] = delay
             # vis_ps[i,1,:] = Pxx_spec
-
     return vis_ps
 
-# window functions: boxcar, triang, blackman, hamming, hann, bartlett, flattop, parzen, bohman, blackmanharris, nuttall, barthann, kaiser
+# window functions: boxcar (equivalent to no window at all), triang, blackman, hamming, hann, bartlett, flattop, parzen, bohman, blackmanharris, nuttall, barthann, kaiser
+
 
 vis_ps = power_spectrum(vis_half1, vis_half2, window = 'boxcar', length = None, scaling = 'spectrum', detrend = False) # spectrum
 vis_psd = power_spectrum(vis_half1, vis_half2, window = 'boxcar', length = None, scaling = 'density', detrend = False)
 
-# bang units in dimensionless PS? check hera pspec for guidance
+
+# convert units in dimensionless PS? check hera pspec for guidance
 def plot_stat_ps(data, *statistics, scaling = 'spectrum', rms=False):
     plt.figure()
     for statistic in statistics:
@@ -378,6 +377,7 @@ def plot_stat_ps(data, *statistics, scaling = 'spectrum', rms=False):
     plt.ion()
     plt.show()
 
+
 plot_stat_ps(vis_ps, 'median', 'mean', scaling = 'spectrum', rms=False) # comparing the statistics
 plot_stat_ps(vis_ps, 'mean')
 
@@ -402,6 +402,7 @@ def baseline_analysis(ps):
     no_rows = plot_dim[0]
     no_cols = plot_dim[1]
     fig, axs = plt.subplots(nrows=7, ncols=5, sharex=True, sharey=True, squeeze=False)
+    plt.axis(xmin=-0.1, xmax=5.2, ymin=1e-10, ymax=1e-0)
     for row in range(no_rows):
         for col in range(no_cols):
             axs[row,col].semilogy(ps[(row*no_cols)+col,0,:]*1e6, ps[(row*no_cols)+col,1,:], linewidth=1)
@@ -425,7 +426,7 @@ def baseline_analysis(ps):
     plt.savefig(fig_path, format='pdf', dpi=300)
     plt.ion()
     plt.show()
-baseline_analysis(cps)
+baseline_analysis(vis_ps)
 
 
 # rm ~/Desktop/baseline_analysis.pdf
