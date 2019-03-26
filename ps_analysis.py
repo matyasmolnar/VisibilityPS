@@ -352,21 +352,15 @@ vis_ps = power_spectrum(vis_half1, vis_half2, window = 'boxcar', length = None, 
 vis_psd = power_spectrum(vis_half1, vis_half2, window = 'boxcar', length = None, scaling = 'density', detrend = False)
 
 # bang units in dimensionless PS? check hera pspec for guidance
-# plot multiple graphs on same plot - add compare input??
 def plot_stat_ps(data, *statistics, scaling = 'spectrum', rms=False):
     plt.figure()
     for statistic in statistics:
-        if scaling == 'spectrum':
-            stat = eval('np.' + statistic)(data, axis=0)
-        elif scaling == 'density':
-            stat = eval('np.' + statistic)(data, axis=0)
-        else:
-            raise ValueError('Chose either spectrum of density for scaling.')
+        stat = eval('np.' + statistic)(data, axis=0)
         # plt.figure()
         if scaling =='density':
             plt.semilogy(stat[0]*1e6, stat[1], label=statistic)
             plt.ylabel('Cross power spectral density [Amp**2/s]')
-        else:
+        elif scaling == 'spectrum':
             if rms:
                 plt.semilogy(stat[0]*1e6, np.sqrt(stat[1]), label=statistic)
                 plt.ylabel('Linear spectrum [Amp RMS]')
@@ -374,18 +368,13 @@ def plot_stat_ps(data, *statistics, scaling = 'spectrum', rms=False):
                 plt.semilogy(stat[0]*1e6, stat[1], label=statistic)
                 plt.ylabel('Cross power spectrum [Amp**2]')
                 plt.legend(loc='upper right')
+        else:
+            raise ValueError('Chose either spectrum of density for scaling.')
         plt.xlabel('Geometric delay [$\mu$s]')
         if len(statistics) > 1:
             plt.title('Cross power spectrum over E-W baselines')
         else:
             plt.title('M' + statistic[1:] + ' cross power spectrum over E-W baselines')
-        # if statistic == 'mean':
-        #     plt.title('Mean cross power spectrum over baselines')
-        # elif statistic == 'median':
-        #     plt.title('Median cross power spectrum over baselines')
-        # else:
-        #     raise ValueError('Chose either mean of meadian for statistic.')
-        # plt.savefig('test.pdf', format='pdf')
     plt.ion()
     plt.show()
 
