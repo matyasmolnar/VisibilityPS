@@ -23,6 +23,7 @@ from scipy import signal
 import matplotlib.pyplot as plt
 import matplotlib
 import functools
+import seaborn as sns; sns.set(); sns.set_style("whitegrid")
 # import pickle
 # from __future__ import print_function
 
@@ -310,7 +311,7 @@ def day_statistic(vis_array, selected_days, statistic_method = days_statistic):
     return vis_avg
 
 
-vis_half1 = day_statistic_new(vis_amps_halves[0], day_halves[0]).data
+vis_half1 = day_statistic(vis_amps_halves[0], day_halves[0]).data
 vis_half2 = day_statistic(vis_amps_halves[1], day_halves[1]).data
 
 vis_amps_final =  day_statistic(vis_amps, days).data
@@ -329,7 +330,6 @@ def power_spectrum(data1, data2 = None, window = 'hann', length = None, scaling 
             delay, Pxy_spec = signal.csd(data1[i,:], data2[i,:], fs=1./resolution, window=window, scaling=scaling, nperseg=length, detrend=detrend)
             Pxy_spec = np.absolute(Pxy_spec)
             vis_ps[i,:,:] = [delay, Pxy_spec]
-        return vis_ps
 
     # PS
     else:
@@ -343,90 +343,54 @@ def power_spectrum(data1, data2 = None, window = 'hann', length = None, scaling 
             vis_ps[i,:,:] = [delay, Pxx_spec]
             # vis_ps[i,0,:] = delay
             # vis_ps[i,1,:] = Pxx_spec
-        return vis_ps
 
-
-# def compute_cps():
-#     # Length of the FFT used
-#     infft = 2**7
-#
-#     # Finding dimension of returned delays
-#     delay_test, Pxy_spec_test = signal.csd(vis_half1[1,:], vis_half2[1,:], fs=1./resolution, window='flattop', scaling='spectrum', nperseg=infft, detrend='linear')
-#     delayshape = delay_test.shape[0] #how many data points the signal.periodogram calculates
-#     # print(delayshape)
-#     vis_cps = np.zeros((vis_half1.shape[0], 2, delayshape)) # dimensions are [baselines, (delay, Pxx_spec), delayshape]
-#     for i in range(0, vis_half1.shape[0]): # Iterating over all baselines
-#         delay, Pxy_spec = signal.csd(vis_half1[i,:], vis_half2[i,:], fs=1./resolution, window='flattop', scaling='spectrum', nperseg=infft, detrend='linear')
-#         Pxy_spec = np.absolute(Pxy_spec)
-#         vis_cps[i,:,:] = [delay, Pxy_spec]
-#     return vis_cps
-# # cps returns complex Pxy, since Im parts won't cancel out
-#
-# def compute_ps():
-#     # Length of the FFT used
-#     infft = 2**7
-#
-#     # Finding dimension of returned delays
-#     delay_test, Pxx_spec_test = signal.periodogram(vis_amps_final[1,:], fs=1./resolution, window='flattop', scaling='spectrum', nfft=infft, detrend='linear')
-#     delayshape = delay_test.shape[0] #how many data points the signal.periodogram calculates
-#     # print(delayshape)
-#     vis_ps = np.zeros((vis_amps_final.shape[0], 2, delayshape)) # dimensions are [baselines, (delay, Pxx_spec), delayshape]
-#     for i in range(0, vis_amps_final.shape[0]): # Iterating over all baselines
-#         delay, Pxx_spec = signal.periodogram(vis_amps_final[i,:], fs=1./resolution, window='flattop', scaling='spectrum', nfft=infft, detrend='linear')
-#         vis_ps[i,:,:] = [delay, Pxx_spec]
-#         # vis_ps[i,0,:] = delay
-#         # vis_ps[i,1,:] = Pxx_spec
-#     return vis_ps
+    return vis_ps
 
 # window functions: boxcar, triang, blackman, hamming, hann, bartlett, flattop, parzen, bohman, blackmanharris, nuttall, barthann, kaiser
 
-cps = power_spectrum(vis_half1, vis_half2, window = 'boxcar', length = None, scaling = 'spectrum', detrend = False) # spectrum
-cps_stat_ew = np.median(cps, axis=0)
+vis_ps = power_spectrum(vis_half1, vis_half2, window = 'boxcar', length = None, scaling = 'spectrum', detrend = False) # spectrum
+vis_psd = power_spectrum(vis_half1, vis_half2, window = 'boxcar', length = None, scaling = 'density', detrend = False)
 
 # bang units in dimensionless PS? check hera pspec for guidance
-# plot multiple graphs on same plot
-def plot_stat_ps(stat, rms=False):
+# plot multiple graphs on same plot - add compare input??
+def plot_stat_ps(data, *statistics, scaling = 'spectrum', rms=False):
     plt.figure()
-    # for data in args:
-    if str(stat) =='cpsd_mean_ew':
-        plt.semilogy(stat[0]*1e6, stat[1])
-        plt.ylabel('Cross power spectrum [Amp**2/s]')
-    else:
-        if rms:
-            plt.semilogy(stat[0]*1e6, np.sqrt(stat[1]))
-            plt.ylabel('Cross power spectrum [Amp RMS]')
+    for statistic in statistics:
+        if scaling == 'spectrum':
+            stat = eval('np.' + statistic)(data, axis=0)
+        elif scaling == 'density':
+            stat = eval('np.' + statistic)(data, axis=0)
         else:
-            plt.semilogy(stat[0]*1e6, stat[1])
-            plt.ylabel('Cross power spectrum [Amp**2]')
-    plt.xlabel('Geometric delay [$\mu$s]')
-    if str(stat) == 'cps_mean_ew':
-        plt.title('Mean cross power spectrum over baselines')
-    elif str(stat) == 'cps_median_ew':
-        plt.title('Median cross power spectrum over baselines')
-    # plt.savefig('test.pdf', format='pdf')
-    # plt.ion()
+            raise ValueError('Chose either spectrum of density for scaling.')
+        # plt.figure()
+        if scaling =='density':
+            plt.semilogy(stat[0]*1e6, stat[1], label=statistic)
+            plt.ylabel('Cross power spectral density [Amp**2/s]')
+        else:
+            if rms:
+                plt.semilogy(stat[0]*1e6, np.sqrt(stat[1]), label=statistic)
+                plt.ylabel('Linear spectrum [Amp RMS]')
+            else:
+                plt.semilogy(stat[0]*1e6, stat[1], label=statistic)
+                plt.ylabel('Cross power spectrum [Amp**2]')
+                plt.legend(loc='upper right')
+        plt.xlabel('Geometric delay [$\mu$s]')
+        if len(statistics) > 1:
+            plt.title('Cross power spectrum over E-W baselines')
+        else:
+            plt.title('M' + statistic[1:] + ' cross power spectrum over E-W baselines')
+        # if statistic == 'mean':
+        #     plt.title('Mean cross power spectrum over baselines')
+        # elif statistic == 'median':
+        #     plt.title('Median cross power spectrum over baselines')
+        # else:
+        #     raise ValueError('Chose either mean of meadian for statistic.')
+        # plt.savefig('test.pdf', format='pdf')
+    plt.ion()
     plt.show()
 
-plot_stat_ps(cps_stat_ew, rms=False)
-
-# def plot_mean_cps():
-#     plt.figure()
-#     plt.semilogy(cps_mean_ew[0]*1e6, np.sqrt(cps_mean_ew[1]))
-#     plt.xlabel('Geometric delay [$\mu$s]')
-#     plt.ylabel('Cross power spectrum [Amp RMS]')
-#     plt.title('Mean cross power spectrum over baselines')
-#     # plt.savefig('test.pdf', format='pdf')
-#     plt.ion()
-#     plt.show()
-# def plot_median_cps():
-#     plt.figure()
-#     plt.semilogy(cps_median_ew[0]*1e6, np.sqrt(cps_median_ew[1]))
-#     plt.xlabel('Geometric delay [$\mu$s]')
-#     plt.ylabel('Cross power spectrum [Amp RMS]')
-#     # plt.savefig('test.pdf', format='pdf')
-#     plt.title('Median cross power spectrum over baselines')
-#     plt.ion()
-#     plt.show()
+plot_stat_ps(vis_ps, 'median', 'mean', scaling = 'spectrum', rms=False) # comparing the statistics
+plot_stat_ps(vis_ps, 'mean')
 
 
 def factors(n):
@@ -452,7 +416,7 @@ def baseline_analysis(ps):
     for row in range(no_rows):
         for col in range(no_cols):
             axs[row,col].semilogy(ps[(row*no_cols)+col,0,:]*1e6, ps[(row*no_cols)+col,1,:], linewidth=1)
-            axs[row,col].legend([str(baselines[(row*no_cols)+col])],loc="upper right", prop={'size': 6}, frameon=False)
+            axs[row,col].legend([str(baselines[(row*no_cols)+col])],loc='upper right', prop={'size': 6}, frameon=False)
             axs[row,col].set_xticks(np.arange(0,6))
             axs[row,col].set_xticks(np.arange(0,6,0.2), minor=True)
             axs[row,col].set_yticks(np.power(np.ones(5)*10,-np.arange(1,10,2)))
@@ -474,23 +438,6 @@ def baseline_analysis(ps):
     plt.show()
 baseline_analysis(cps)
 
-# def baseline_analysis_old(ps):
-#     os.remove('/rds/project/bn204/rds-bn204-asterics/mdm49/baseline_analysis.pdf')
-#     plt.figure()
-#     label_size = 6
-#     matplotlib.rcParams['xtick.labelsize'] = label_size
-#     # plt.tight_layout
-#     for i in range(0,len(baselines)):
-#         plt.subplot(7,5,i+1)# sharex=True, sharey=True)
-#         plt.semilogy(ps[i,0,:]*1e6, np.sqrt(ps[i,1,:]))
-#         plt.legend([str(baselines[i])],loc="upper right", prop={'size': 6})#, fontsize='x-small')
-#     plt.subplots_adjust(hspace=0.6, wspace=0.6)
-#     # plt.xlabel('Geometric delay [$\mu$s]')
-#     # plt.ylabel('Power spectrum [Amp RMS]')
-#     plt.suptitle('(Cross) power spectrum for all E-W baselines')
-#     plt.savefig('baseline_analysis.pdf', format='pdf')
-#     plt.ion()
-#     plt.show()
 
 # rm ~/Desktop/baseline_analysis.pdf
 # scp mdm49@login-cpu.hpc.cam.ac.uk:/rds/project/bn204/rds-bn204-asterics/mdm49/baseline_analysis.pdf ~/Desktop/
