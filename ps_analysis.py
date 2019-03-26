@@ -36,19 +36,21 @@ import functools
 
 # Input parameters:
 
+# LAST to analyze
 LAST = 3.31 # float
 
 last_average = True
 last_average_period = 40 #seconds; chose between {20,60}
-last_statistic = 'median'
+last_statistic = 'median' # {median, mean}
 
-IDRDay = 2458098 # chose one of days, if no averaging
 statistic_all_IDR2 = False # run statistics over all IDR2 Days?
 IDR2=[2458098, 2458099, 2458101, 2458102, 2458103, 2458104, 2458105, 2458106, 2458107,
         2458108, 2458109, 2458110, 2458111, 2458112, 2458113, 2458114, 2458115, 2458116, 2458140]
+
 chosen_days = [2458098, 2458099, 2458101, 2458102, 2458103, 2458104, 2458105, 2458106, 2458107, 2458108,
             2458110, 2458111, 2458112, 2458113, 2458116]
-days_statistic = 'median'
+
+days_statistic = 'median' # {median, mean}
 
 sigma_clip_days = True
 sc_days_stds = 3.0
@@ -59,12 +61,7 @@ sc_bls_stds = 3.0
 channel_start = 100
 channel_end = 400
 
-# check misaligned_days
-
 #####################################################################################################
-
-# if last_end - last_start > 0.017:
-#     raise ValueError('Cannot average in time for more than 1 minute.')
 
 
 if last_statistic == 'median':
@@ -283,46 +280,37 @@ if -999 in vis_amps.data:
         print('No baseline clipping applied; all data within '+str(sc_days_stds)+' sigma for each baseline.')
 
 
-# statistic over last
+# statistic over LAST
 if last_average:
     if mean_last:
         vis_amps = np.ma.mean(vis_amps, axis=0)
     elif median_last:
         vis_amps = np.ma.median(vis_amps, axis=0)
 
+# chosing single day
+if len(chosen_days) == 1:
+    vis_amps_single_day = vis_amps[np.where(days == IDRDay)[0][0] ,:,:]
+
 
 # splitting array of days into 2 (for cross power spectrum between mean/median of two halves)
 vis_amps_halves = np.array_split(vis_amps,2, axis=0) # split visibilities array into two sub-arrays of (near) equal days
 day_halves = np.array_split(days,2)
 
+
 # mean statistic over days
-def day_statistic(vis_array, selected_days):
-    if mean_days:
-        if statistic_all_IDR2:
-            vis_avg = np.ma.mean(vis_array, axis=0)
-        else:
-            day_flags = []
-            for i in range(0,len(selected_days)):
-                day_flags.append(selected_days[i] in chosen_days)
-            day_flags = np.array(day_flags, dtype=bool)
-            vis_avg = np.ma.mean(vis_array[day_flags, :, :], axis=0)
-    # median statistic
-    elif median_days:
-        if statistic_all_IDR2:
-            vis_avg = np.ma.median(vis_array, axis=0)
-        else:
-            day_flags = []
-            for i in range(0,len(selected_days)):
-                day_flags.append(selected_days[i] in chosen_days)
-            day_flags = np.array(day_flags, dtype=bool)
-            vis_avg = np.ma.median(vis_array[day_flags, :, :], axis=0)
-    # chosing single Day
+def day_statistic(vis_array, selected_days, statistic_method = days_statistic):
+    if statistic_all_IDR2:
+        vis_avg = eval('np.ma.' + statistic_method)(vis_array, axis=0)
     else:
-        vis_avg = vis_array[np.where(days == IDRDay)[0][0] ,:,:]
+        day_flags = [] # removing days that do not appear in IDR2
+        for i in range(0,len(selected_days)):
+            day_flags.append(selected_days[i] in chosen_days)
+        day_flags = np.array(day_flags, dtype=bool)
+        vis_avg = eval('np.ma.' + statistic_method)(vis_array[day_flags, :, :], axis=0)
     return vis_avg
 
 
-vis_half1 = day_statistic(vis_amps_halves[0], day_halves[0]).data
+vis_half1 = day_statistic_new(vis_amps_halves[0], day_halves[0]).data
 vis_half2 = day_statistic(vis_amps_halves[1], day_halves[1]).data
 
 vis_amps_final =  day_statistic(vis_amps, days).data
