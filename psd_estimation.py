@@ -1,6 +1,7 @@
 from scipy import signal
 from scipy import fftpack as sf
 
+
 def corrfn_fft(data, dwei, ncorr=None):
     '''Compute raw correlation function using FFT.'''
     nsamp = len(data)
@@ -13,6 +14,7 @@ def corrfn_fft(data, dwei, ncorr=None):
     cwei = np.fft.irfft(dwei_ps, n=nfft)[0:ncorr]
     return corr, cwei
 
+
 def corrfn_rsp(data, dwei, ncorr=None):
     '''Compute raw correlation function in real space.'''
     nsamp = len(data)
@@ -24,6 +26,7 @@ def corrfn_rsp(data, dwei, ncorr=None):
         corr[i] = np.sum(data[i:]*data[:nsamp-i])
         cwei[i] = np.sum(dwei[i:]*dwei[:nsamp-i])
     return corr, cwei
+
 
 def psd_est(tsamp, data, dwei, ncorr=None, use_fft=True):
     '''Make estimate of power spectral density.'''
@@ -54,8 +57,8 @@ def psd_est(tsamp, data, dwei, ncorr=None, use_fft=True):
     # Apply window function.
 
     i = np.arange(ncorr)
-    #w = 1.0 - i/ncorr # Triangular
-    w = 0.5 * (1.0 + np.cos(np.pi*i/ncorr)) # Hann
+    # w = 1.0 - i/ncorr # Triangular
+    w = 0.5 * (1.0 + np.cos(np.pi*i/ncorr))  # Hann
     corr *= w
 
     # Get PSD from correlation function.
