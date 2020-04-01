@@ -1,17 +1,13 @@
 """HERA LST Aligner
 
-Matyas Molnar, University of Cambridge
-mdm49@cam.ac.uk
-
-This script takes a directory of visibility files outputted from recipe using
-heracasa (Bojan Nikolic, bn204@cam.ac.uk), and then bins them so that
-visibilities over successive days are aligned in LST.
+This script takes a directory of visibilities in npz file format that are
+create using the reduction_raw.py script, and then bins
+them so that visibilities over successive days are aligned in LST.
 
 Example of running this script:
 $ casapython align_lst.py --lst_start 1.5 --lst_end 6 --date_start 2458098
---date_end 2458140 --output_file 'aligned_raw_visibilities'
-/rds/project/bn204/rds-bn204-asterics/mdm49/IDR2_raw/
-/rds/project/bn204/rds-bn204-asterics/mdm49/aligned/
+--date_end 2458140 --output_file 'aligned_raw_visibilities' raw_visibilities
+aligned_raw_visibilities
 """
 
 from __future__ import print_function
