@@ -1,20 +1,14 @@
-# module load miniconda3-4.5.4-gcc-5.4.0-hivczbz
-# source activate astroenv
-# scp /Users/matyasmolnar/HERA_Data/VisibilityPS/* mdm49@login-cpu.hpc.cam.ac.uk:/rds/project/bn204/rds-bn204-asterics/mdm49
-# scp mdm49@login-cpu.hpc.cam.ac.uk:/rds/project/bn204/rds-bn204-asterics/mdm49/*.pdf /Users/matyasmolnar/HERA_Data/Figures
+"""HERA Visibility PS Computation Script
 
-# HERA Visibility PS Computation Script
-#
-# Matyas Molnar, University of Cambridge
-# mdm49@cam.ac.uk
-#
-# This script takes aligned the aligned HERA visibilities in LAST (as outputted by
-# align_lst.py) and computes various PS estimates using various statistics over LASTs,
-# days and baselines, and provides a per baseline analysis of PS
+This script takes aligned HERA visibilities in LAST (as outputted by
+align_lst.py) and computes various PS estimates using simple statistics over LASTs,
+days and baselines.
 
+To use on CSD3 must have the astroenv conda environment activated:
+$ module load miniconda3-4.5.4-gcc-5.4.0-hivczbz
+$ source activate astroenv
+"""
 
-from psd_estimation import *
-import sys
 import os
 import astropy.stats
 import math
@@ -22,15 +16,12 @@ import numpy as np
 import scipy
 from scipy import signal
 from scipy import fftpack as sf
-import matplotlib.pyplot as plt
 import matplotlib
+from matplotlib import pyplot as plt
 import functools
 import seaborn as sns
 sns.set()
 sns.set_style("whitegrid")
-
-# import warnings
-# warnings.simplefilter("ignore", UserWarning)
 
 
 #####################################################################################################
