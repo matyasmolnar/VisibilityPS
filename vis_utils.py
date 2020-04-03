@@ -29,8 +29,12 @@ def get_data_paths(data_dir, pol, in_days, in_times=None, file_format='uv'):
     return sorted(in_data)
 
 
-def flt_dat_paths(in_data):
-    """Removing datasets that have already been converted"""
+def flt_data_paths(in_data):
+    """Removes datasets that have already been processed
+
+    :param in_data: Paths of datasets to process
+    :type in_data: list
+    """
     in_data_filtered = list(in_data) # copying list of all sessions
     for data_path in in_data:
         if os.path.exists(os.path.join(procdir, os.path.split(data_path)[-1][:-len('uv')]+'ms.npz')):

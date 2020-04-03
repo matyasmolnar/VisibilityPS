@@ -9,22 +9,31 @@ import os
 
 import casa
 import numpy as np
+
 from heracasa import closure as hc
 from heracasa import data
 from heracasa.data import uvconv
 
+from idr2_info import idr2_bad_ants_casa
+
+
+GC_coords = 'J2000 17h45m40.04s -29d00m28.12s'
+GCCleanMask = 'ellipse[[17h45m40.04s, -29d00m28.12s], [11deg, 4deg], 30deg]'
 
 FornaxA_coords = 'J2000 03h22m41.79s -37d12m29.52s'
-GC_coords = 'J2000 17h45m40.04s -29d00m28.12s'
+FornaxACleanMask = 'ellipse[[3h22m41.79s, -37d12m29.52s], [1deg, 1deg], 10deg]'
 
-FornaxACleanMask = 'ellipse[[3h22m41.79s, -37d12m29.52s], [ 1deg, 1deg ], 10deg]'
-GCCleanMask = 'ellipse[[17h45m40.04s, -29d00m28.12s ], [ 11deg, 4deg ], 30deg]'
+cal_source_dct = {'GC': {'coords': GC_coords,
+                         'mask': GCCleanMask},
+                  'FornaxA': {'coords': FornaxA_coords,
+                              'mask': FornaxACleanMask}}
 
 
 def cv(uvin):
     """Convert visibilities from miriad to measurement set file format
 
-    No caching done here
+    Conversion from miriad to ms done with the intermediate step of converting
+    to intermediate uvfits file format
 
     :param uvin: Visibility dataset in miriad file format
     :type uvin: miriad
@@ -41,14 +50,32 @@ def cv(uvin):
     return msout
 
 
-def gcflagdata(msin, bad_ants_arr, cut_edges=True, bad_chans=None):
+def get_bad_ants(msin, bad_ants_arr, verbose=True):
+    """Get the bad antennas for HERA for a given JD
+
+    :param msin: Visibility dataset
+    :type msin: Measurement set
+    :param bad_ants_arr: Mapping of JDs to bad antennas. For IDR2, bad_ants_arr
+                         = idr2_bad_ants_casa, and can be found in idr2_info.py
+    :type bad_ants_arr: ndarray of shape shape (2, no_ants)
+    """
+    JD = int(msin.split('.')[1]) # Get JD from filename
+    bad_ants_index = np.where(bad_ants_arr[0, :] == JD)[0][0]
+    bad_ants = bad_ants_arr[1, bad_ants_index]
+    if verbose:
+        print('Flagged antennas for JD {} are {}'.format(JD, bad_ants))
+    return bad_ants
+
+
+def gcflagdata(msin, bad_ants, cut_edges=True, bad_chans=None):
     """Flag bad antennas for visibility dataset
 
     :param msin: Visibility dataset
     :type msin: Measurement set
-    :param bad_ants_arr: Bad antennas array of shape (2, no_ants), that maps JDs
-                         to bad antennas
-    :type bad_ants_arr: ndarray
+    :param bad_ants: Bad antennas to flag - can be specified by a list of
+                     antennas, or can be given by a string specifying the
+                     data release
+    :type bad_ants: list or str
     :param cut_edges: Specify if the band edges should be flagged
     :type cut_edges: bool
     :param bad_chans: Specify channels to flag
@@ -58,13 +85,18 @@ def gcflagdata(msin, bad_ants_arr, cut_edges=True, bad_chans=None):
     :type msin: Measurement set
     """
 
-    JD = int(msin.split('.')[1]) # Get JD from filename
-    bad_ants_index = np.where(bad_ants_arr[0, :] == JD)[0][0]
-    print('Flagged antennas for JD {} are {}'.format(JD,
-          bad_ants_arr[1, bad_ants_index]))
+    if bad_ants == 'IDR2':
+        JD = int(msin.split('.')[1]) # Get JD from filename
+        if JD in idr2_bad_ants_casa[0, :]:
+            bad_ants = get_bad_ants(msin, idr2_bad_ants_casa, verbose=True)
+        else:
+            bad_ants = None
+            print('Visibility dataset {} not in IDR2 - no antennas flagged'.format(msin))
+
     # Flagging bad antennas known for that JD
-    casa.flagdata(msin, flagbackup=True, mode='manual',
-                  antenna=str(bad_ants_arr[1, bad_ants_index]).replace("[", "").replace("]", ""))
+    if bad_ants:
+        casa.flagdata(msin, flagbackup=True, mode='manual',
+                      antenna=str(bad_ants).replace("[", "").replace("]", ""))
 
     # Cutting visibilities at extremes of bandwidth
     if cut_edges:
@@ -76,52 +108,70 @@ def gcflagdata(msin, bad_ants_arr, cut_edges=True, bad_chans=None):
         for bad_chan in bad_chans:
             flagdata(msin, flagbackup=True, mode='manual', spw='0:'+str(bad_chan))
 
-    # Flag autocorrelations (where ant i = ant j)
+    # Flag autocorrelations
     casa.flagdata(msin, autocorr=True)
     return msin
 
 
-def fringerot(din, phasecenter=FornaxA_coords):
+def fringerot(msin, phasecenter):
     """Fringe rotate visibilities
 
-    Default is to rotate to Fornax A coordinates
-
-    :param phasecenter: J2000 coordinates
+    :param phasecenter: J2000 coordinates of point source model or name of well-known
+    radio object
+    :type phasecenter: str
     """
-    casa.fixvis(din, din, phasecenter=phasecenter)
-    return din
+    if phasecenter == 'FornaxA':
+        phasecenter = FornaxA_coords
+    if coords == 'GC':
+        phasecenter = GC_coords
+
+    casa.fixvis(msin, msin, phasecenter=phasecenter)
+    return msin
 
 
-def mkinitmodel(**kwargs):
+def mkinitmodel(coords, **kwargs):
     """Make an initial point source model
 
-    Default is to create one for Fornax A
+    :param coords: J2000 coordinates of point source model or name of well-known
+    radio object
+    :type coords: str
     """
+
+    # Check if point source model has already been created
+    if os.path.exists(coords + '.cl'):
+        print('Model for {} already created'.format(coords))
+    else:
+        if coords in cal_source_dct.keys():
+            dir = cal_source_dct[coords]['coords']
+        else:
+            dir = coords
+            coords = 'model'
+
     casa.componentlist.done()
     casa.componentlist.addcomponent(flux=1.0,
                                     fluxunit='Jy',
                                     shape='point',
-                                    dir='J2000 03h22m41.789s -37d12m29.52s')
-    casa.componentlist.rename('FornaxA.cl')
+                                    dir=dir)
+    casa.componentlist.rename(coords+'.cl')
     casa.componentlist.close()
 
 
-def dosplit(msin, inf, datacolumn="corrected", spw=""):
+def dosplit(msin, inf, datacolumn='corrected', spw=''):
     """Split the initial calibrated data"""
-    newms = os.path.basename(msin)+inf+".ms"
+    newms = os.path.basename(msin) + inf + '.ms'
     split(msin, newms, datacolumn=datacolumn, spw=spw)
     return newms
 
 
-def calname(m, c):
+def calname(msin, cal_type):
     """Build calibrator name based on filename"""
-    return os.path.basename(m) + c + '.cal'
+    return os.path.basename(m) + cal_type + '.cal'
 
 
-def kc_cal(msin):
+def kc_cal(msin, model_cl):
     """Get gain and delay calibration solutions"""
     # Fill the model column
-    casa.ft(msin, complist='FornaxA.cl', usescratch=True)
+    casa.ft(msin, complist=model_cl, usescratch=True)
 
     kc = calname(msin, 'K') # Delays
     gc = calname(msin, 'G') # Gains
@@ -141,11 +191,16 @@ def bandpass_cal(msin):
     return bc
 
 
-def cleaninit(msin):
-    imgname = os.path.basename(msin)+".init.img"
+def cleaninit(msin, cal_source):
+    """First CLEANing round"""
+    imgname = os.path.basename(msin) + '.init.img'
+    if cal_source in cal_source_dct.keys():
+        clean_mask = cal_source_dct[cal_source]['mask']
+    else:
+        clean_mask = None
     clean(vis=msin,
           imagename=imgname,
-          niter=500,  # 500
+          niter=500,
           weighting='briggs',
           robust=0,
           imsize=[512, 512],
@@ -153,33 +208,49 @@ def cleaninit(msin):
           mode='mfs',
           nterms=1,
           spw='0:150~900',
-          mask=FornaxACleanMask)
+          mask=clean_mask)
 
 
-def cleanfinal(msl):
-    """CLEANing and imaging"""
-    imgname = "FornaxA.combined.yy.img"
-    clean(vis=msl,
+def cleanfinal(msin, cal_source):
+    """Second CLEANing round and imaging"""
+    imgname = os.path.basename(msin) + '.fin.img'
+    if cal_source in cal_source_dct.keys():
+        clean_mask = cal_source_dct[cal_source]['mask']
+    else:
+        cal_source = '' # TODO create mask for arbitrary point source given
+        clean_mask = None
+    clean(vis=msin,
           imagename=imgname,
           spw='0:60~745',
-          niter=3000,  # 5000
+          niter=3000,
           weighting='briggs',
           robust=-1,
           imsize=[512, 512],
           cell=['250arcsec'],
           mode='mfs',
           nterms=1,
-          mask=FornaxACleanMask)
-
-    imggal = "FornaxA.combinedyy.galcord"
-    imregrid(imagename=imgname+".image", output=imggal, template="GALACTIC")
+          mask=clean_mask)
+    imggal = cal_source + 'combined.galcord'
+    imregrid(imagename=imgname+'.image', output=imggal, template='GALACTIC')
 
 
 def genvisibility(fin, **kwargs):
     """Save the calibrated data arrays to npz file format"""
-    fout = os.path.split(fin)[-1] + ".npz"
+    fout = os.path.split(fin)[-1] + '.npz'
     r = hc.vis(fin, baseline=idr2_ants, alist=idr2_bls)
     np.savez(fout, **r)
     if not os.path.exists(fout):
         raise RuntimeError('No output produced by heracasa.closure.vis')
     return(fout)
+
+
+def plot_ms(msin):
+    """Plotting of visibilities in CASA"""
+    # Evaluate total time of observation
+    tb.open(msin)
+    time_obs = tb.getcol('TIME')
+    tb.close()
+    exposure = time_obs[-1] - time_obs[0]
+
+    plotms(vis=msin, xaxis='chan', yaxis='amp', ydatacolumn='corrected',
+           dpi=600, highres=True, coloraxis='baseline', avgtime=str(exposure))
