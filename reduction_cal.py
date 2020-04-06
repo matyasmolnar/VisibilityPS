@@ -1,4 +1,4 @@
-"""Data reduction of raw visibilities to npz file format (no calibration)
+"""Data reduction of visibilities to npz file format (with calibration)
 
 Data reduction steps for HERA IDR2 visibilities in miriad file format:
     1. Miriad visibilities are converted to measurement set (CASA) file format
@@ -8,7 +8,9 @@ Data reduction steps for HERA IDR2 visibilities in miriad file format:
         - Autocorrelations flagged
     3. OPTIONAL: Visibilities are fringe rotated to the calibration point source.
        This step is for imaging purposes.
-    4. The visibilities are saved as an ndarray to an npz file
+    4. The gain, delay and bandpass calibration solutions are calculated from a
+       point source model and applied. No CLEANing is performed.
+    5. The visibilities are saved as an ndarray to an npz file
 """
 
 
@@ -17,8 +19,8 @@ import multiprocessing
 import os
 import shutil
 
-from calibration_functions import cv, gcflagdata, fringerot
-from idr2_info import idr2_jds, idr2_ants, idr2_bls
+from calibration_functions import cv, gcflagdata, fringerot, mkinitmodel, kc_cal, \
+bandpass_cal, dosplit, cleaninit, cleanfinal
 from vis_utils import get_data_paths, cleanspace
 
 
@@ -32,11 +34,8 @@ DataDir = "/rds/project/bn204/rds-bn204-asterics/HERA/data"
 procdir = "/rds/project/bn204/rds-bn204-asterics/mdm49/IDR2_raw"
 
 Pol = 'xx' # Polarization of visibilities to process
-InDays = idr2_jds[-2:] # Select days to process
+InDays = 2458098 # Select days to process
 InTimes = [] # OPTIONAL: select times e.g. [12552]
-
-# Multiprocessing specification
-NUMBER_OF_CORES = 8
 
 # Remove all files in procdir
 clean_dir = True
@@ -44,11 +43,16 @@ clean_dir = True
 # Check status of data reduction steps for each visibility dataset
 conversion_verbose = True
 
+# Multiprocessing specification
+NUMBER_OF_CORES = len(IDRDays)
+
 #############################################################
 
 
 def npz_conversion(uvin, rm_ms=True, verbose=conversion_verbose):
-    """End to end conversion of raw visibility dataset to npz file format
+    """Calibration of visibility dataset with export to npz file format
+
+    Only doing one round of calibration (gain and delay, followed by bandpass)
 
     :param rm_ms: Remove ms format visibilities from procdir
     :type rm_ms: bool
@@ -59,7 +63,7 @@ def npz_conversion(uvin, rm_ms=True, verbose=conversion_verbose):
     logging.info('Reducing dataset {}'.format(uvin))
     if os.path.basename(dataset).endswith('.uv'):
         ms = cv(uvin)
-        logging.info('Miriad dataset converted to ms file format')
+        logging.info('Miriad  dataset converted to ms file format')
     else:
         ms = uvin
 
@@ -67,10 +71,14 @@ def npz_conversion(uvin, rm_ms=True, verbose=conversion_verbose):
     gcflagdata(ms, 'IDR2', cut_edges=True, bad_chans=None)
     logging.info('{} flagged'.format(ms))
 
-    fringerot(ms)
+    # TODO: only if source in FoV
+    ms = fringerot(ms)
     logging.info('{} fringe rotated'.format(ms))
 
-    npz = genvisibility(ms, baseline=idr2_bls, alist=idr2_ants)
+    model_cl = mkinitmodel(cal_source)
+    ms = kc_cal(ms, model_cl)
+    ms = dobandpass(ms)
+    npz = genvisibility(ms, baseline=inBaselines, alist=inAntenna)
     logging.info('Saved to {}\n'.format(npz))
     if rm_ms:
         shutil.rmtree(ms)
@@ -88,7 +96,6 @@ def main():
     os.chdir(procdir)
 
     InData = get_data_paths(DataDir, Pol, InDays, InTimes)
-
     files_per_core = len(InData) / NUMBER_OF_CORES
     split_files = [InData[i:i+files_per_core]
                    for i in range(0, len(InData), files_per_core)]
@@ -107,7 +114,6 @@ def main():
 
     for file in remainder_files:
         npz_conversion(file)
-
 
 if __name__ == "__main__":
     main()

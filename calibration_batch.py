@@ -21,7 +21,6 @@ Calibration steps for HERA IDR2 visibilities in miriad file format:
 
 import logging
 import os
-import numpy as np
 
 from calibration_functions import cv, gcflagdata, fringerot, mkinitmodel, kc_cal, \
 bandpass_cal, dosplit, cleaninit, cleanfinal
