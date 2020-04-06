@@ -1,83 +1,90 @@
-"""Batch traditional calibration of visibilities"""
+"""Batch traditional calibration of visibilities
+
+Traditional calibration in CASA of visibility datasets, with no multiprocessing.
+
+Calibration steps for HERA IDR2 visibilities in miriad file format:
+    1. Miriad visibilities are converted to measurement set (CASA) file format
+    2. The visibilities are flagged in CASA:
+        - Bad antennas removed
+        - Band edges flagged
+        - Autocorrelations flagged
+    3. OPTIONAL: Visibilities are fringe rotated to the calibration point source.
+       This step is for imaging purposes.
+    4. A point source model for the calibrator is created
+    5. Gain and delay calibration solutions are calculated with the model and applied
+    6. Bandpass calibration solutions are calculated and applied
+    7. A first round of CLEANing is done
+    8. Bandpass calibration is done for a second time
+    9. A second round of CLEANing is done, with images also produced at this stage
+"""
 
 
+import logging
 import os
-import shutil
 import numpy as np
-from pyuvdata import UVData as UV
-from heracasa import data
-from heracasa.data import uvconv
-from recipe import casatasks as c
+
+from calibration_functions import cv, gcflagdata, fringerot, mkinitmodel, kc_cal, \
+bandpass_cal, dosplit, cleaninit, cleanfinal
+from vis_utils import get_data_paths, cleanspace
 
 
-GCCleanMask='ellipse[[17h45m00.0s,-29d00m00.00s ], [ 11deg, 4deg ] , 30deg]'
-FornaxACleanMask = 'ellipse[[3h22m41.8s,-37d12m29.52s], [ 1deg, 1deg ] , 10deg]'
+#############################################################
+####### Modify the inputs in this section as required #######
+#############################################################
 
-c.repo.REPODIR = "/rds/project/bn204/rds-bn204-asterics/cache"
+# Directory of visibilities in miriad file format to reduce
+DataDir = "/rds/project/bn204/rds-bn204-asterics/HERA/data"
+# Output directory
+procdir = "/rds/project/bn204/rds-bn204-asterics/mdm49/IDR2_raw"
 
-# testing locally. have created same directory hierarchy on hard drive
-DataDir = "/Volumes/TOSHIBA_EXT/HERA_Data"
-procdir = "/Volumes/TOSHIBA_EXT/HERA_Data/calibrated"
+Pol = 'xx' # Polarization of visibilities to process
+InDays = 2458098 # Select days to process
+InTimes = [] # OPTIONAL: select times e.g. [12552]
 
-Pol = "xx"
+# Remove all files in procdir
+clean_dir = True
 
-InDays = [2458098]
-InTimes = [31193]
+# Check status of data reduction steps for each visibility dataset
+conversion_verbose = True
 
-
-def makemsfile(uvin, **kwargs):
-    print(uvin)
-    # hash function call
-    hh = c.hf(makemsfile, uvin)
-    mm = repo.get(hh)
-    print(mm)
-    print('MS file already hashed and cached')
-    if not mm:
-        print('Converting MS file and storing it in cache')
-        UV = pyuvdata.UVData()
-        UV.read_miriad(uvin)
-        UV.phase_to_time(Time(UV.time_array[0], format='jd', scale='utc'))
-        tempf = repo.mktemp()
-        os.remove(tempf)
-        UV.write_uvfits(tempf, spoof_nonessential=True)
-        if not os.path.exists(tempf):
-            raise RuntimeError("No output produced by mkuvfits!")
-        foms = c.importuvfits(tempf)
-        os.remove(tempf)
-        #flms = c.flagdata(foms,autocorr=True)
-        mm = repo.put(foms, hh)
-    # to return MS file, would have to return foms
-    return(mm)
+#############################################################
 
 
-# copy RFI flags from uvOR files - this is already done for data in RDS
-
-# main script for this batch calibration
+# Main script for batch traditional calibration
 def main():
-    # cleanspace()
+
+    if verbose:
+        logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(message)s')
+
+    if clean_dir:
+        cleanspace(procdir)
     os.chdir(procdir)
-    ms = [cv(x) for x in InData]
-    # ms = ['zen.2458098.12552.xx.HH.ms']
-    print('ms datasets to calibrate: '+str(ms))
-    flagged = []
-    for x in ms:
-        # IDRDay_of_data = int(os.path.basename(os.path.dirname(os.path.dirname(x))))
-        IDRDay_of_data = int(x.split('.')[1])
-        time_of_data = int(x.split('.')[2])
-        print('Flagging IDR dataset '+str(IDRDay_of_data)+'.'+str(time_of_data))
-        gcflagdata(x, IDRDay_of_data)
-        flagged.append(x)
-    print('ms data succesfully flagged: '+str(flagged))
-    ms = [fringerot(x) for x in flagged]
-    mkinitmodel()
-    cals1 = [calinitial(x) for x in ms]
-    print('Gain and delay calibration tables produced: '+str(cals1))
-    cals2 = [dobandpass(x) for x in ms]
-    print('Calibration complete')
 
+    InData = get_data_paths(DataDir, Pol, InDays, InTimes)
+    data_files = [os.path.basename(dataset) for dataset in InData]
+    logging.info('Datasets to calibrate: {}'.format(uv_files))
 
-# checking quality of calibrated data with imaging and gain / delay calibration plots
-# clean(vis=msin, niter=0, imagename='test.img', weighting='briggs', robust=0, imsize=[512,512], cell=['250arcsec'], mode='mfs')
+    # Only convert miriad datasets
+    ms = [cv(dataset) if os.path.basename(dataset).endswith('.uv') else dataset
+          for dataset in InData]
+    if any('.uv' in data_file for data_file in data_files):
+        logging.info('Converted miriad datasets to ms file format')
+
+    for ms_file in ms:
+        IDR_JD, IDR_time = ms_file.split('.')[1:3]
+        gcflagdata(ms_file, 'IDR2', cut_edges=True, bad_chans=None)
+        logging.info('{} flagged'.format(ms_file))
+
+    # TODO: only if source in FoV
+    ms = [fringerot(ms_file) for ms_file in ms]
+
+    model_cl = mkinitmodel(cal_source)
+    ms = [kc_cal(ms_file, model_cl) for ms_file in ms]
+    ms = [bandpass_cal(ms_file) for ms_file in ms]
+    calsi = [dosplit(ms_file, 'ical') for ms_file in ms]
+    _ = [cleaninit(calsi_file, cal_source) for calsi_file in calsi]
+    cals1 = [bandpass_cal(calsi_file) for calsi_file in calsi]
+    _ = [cleanfinal(cals1_file, cal_source) for cals1_file in cals1]
 
 
 if __name__ == "__main__":

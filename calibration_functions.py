@@ -138,7 +138,7 @@ def mkinitmodel(coords, **kwargs):
     """
 
     # Check if point source model has already been created
-    if os.path.exists(coords + '.cl'):
+    if os.path.exists(coords+'.cl'):
         print('Model for {} already created'.format(coords))
     else:
         if coords in cal_source_dct.keys():
@@ -147,13 +147,14 @@ def mkinitmodel(coords, **kwargs):
             dir = coords
             coords = 'model'
 
-    casa.componentlist.done()
-    casa.componentlist.addcomponent(flux=1.0,
-                                    fluxunit='Jy',
-                                    shape='point',
-                                    dir=dir)
-    casa.componentlist.rename(coords+'.cl')
-    casa.componentlist.close()
+        casa.componentlist.done()
+        casa.componentlist.addcomponent(flux=1.0,
+                                        fluxunit='Jy',
+                                        shape='point',
+                                        dir=dir)
+        casa.componentlist.rename(coords+'.cl')
+        casa.componentlist.close()
+    return coords+'.cl'
 
 
 def dosplit(msin, inf, datacolumn='corrected', spw=''):
@@ -181,6 +182,7 @@ def kc_cal(msin, model_cl):
     # Ensure reference antenna exists and isn't faulty
     casa.gaincal(vis=msin, caltable=gc, gaintype='G', solint='inf',
             refant='11', minsnr=1, calmode='ap', gaintable=kc)
+    applycal(msin, gaintable=[kc, gc])
     return [kc, gc]
 
 
@@ -188,6 +190,7 @@ def bandpass_cal(msin):
     """Bandpass calbration"""
     bc = calname(msin, 'B')
     casa.bandpass(vis=msin, minsnr=1, solnorm=False, bandtype='B', caltable=bc)
+    applycal(msin, gaintable=[bc])
     return bc
 
 

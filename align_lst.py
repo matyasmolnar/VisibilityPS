@@ -24,8 +24,8 @@ import textwrap
 class LST_Binner(object):
 
     """
-    Class that takes the aligned LSTs and a dictionary of ALL the visibilities from
-    all input days and concatenates them together and outputs them as a
+    Class that takes the aligned LSTs and a dictionary of ALL the visibilities
+    from all input days and concatenates them together and outputs them as a
     single numpy array.
 
     Attributes:
@@ -42,7 +42,7 @@ class LST_Binner(object):
 
     lst_end       [Float] End of LSTs, in fractional hours.
 
-    # lst_range     [Integer] Range of LST's to bin.
+    lst_range     [Integer] Range of LST's to bin.
 
     baseline_no      [Integer] Number of baselines in visibilities in [visibility_dict].
 
@@ -82,8 +82,9 @@ class LST_Binner(object):
                  baseline_no=35,
                  channels=1024):
         """
-        Instantiates the LST_Binner class which takes a numpy array of aligned LST's and
-        a dictionary describing all of our visibility data and outputs the items of interest.
+        Instantiates the LST_Binner class which takes a numpy array of aligned
+        LST's and a dictionary describing all of our visibility data and outputs
+        the items of interest.
 
         Inputs:
 
@@ -138,7 +139,6 @@ class LST_Binner(object):
 
         visibilities    [Numpy Array] Binned visibilities of shape [lst, day,
                         baseline, channel]
-
         """
 
         return numpy.cos(visibilities), numpy.sin(visibilities)
@@ -167,7 +167,6 @@ class LST_Binner(object):
         Returns:
 
         fl             [Numpy Array][Bool] Flag array.
-
         """
         cls = visibilities.shape[:2]
         flr = numpy.zeros(shape=visibilities.shape, dtype=numpy.bool)
@@ -253,7 +252,7 @@ class LST_Binner(object):
 
     def save_binned_lsts(self, filename):
         """
-        Takes our binned visibilities and outputs them to a .npz file.
+        Takes our binned visibilities and outputs them to a .npz file
 
         Inputs:
 
@@ -363,7 +362,6 @@ class LST_Alignment(object):
         | - Date_2 - LST_1
         |
         | - etc
-
         """
 
         visibility_dict = {}
@@ -444,9 +442,9 @@ class LST_Alignment(object):
             # Bit of a hatchet job...
             lst_array[i] = numpy.roll(lst_array[i], offset_array[i])
 
-        # Because of the fact HERA only observes for part of the day, we end up with some records
-        # eventually "drifting" out of our aligned LST window. As we roll the array to do the
-        # alignment we can mask off these loose ends.
+        # Because of the fact HERA only observes for part of the day, we end up
+        # with some records eventually "drifting" out of our aligned LST window.
+        # As we roll the array to do the alignment we can mask off these loose ends.
         lst_array = numpy.ma.masked_array(lst_array)
         unaligned_index = numpy.shape(lst_array)[1] + offset_array[0]
         lst_array[:, unaligned_index:] = numpy.ma.masked
@@ -478,14 +476,15 @@ class LST_Alignment(object):
 # This parses all of the files and breaks them up into datestamps. Each datestamp is then aligned correctly.
 class Julian_Parse(object):
     """
-    Class to take a set of filepaths spat out from heracasa and create a dictionary of all the
-    files, keyed by their Julian Date.
+    Class to take a set of filepaths spat out from heracasa and create a
+    dictionary of all the files, keyed by their Julian Date.
 
     Also returns the set of all dates found in the directory.
 
     Attributes:
 
-    filepaths              [List] All filepaths from the directory ending in .npz. Assumed to be heracasa.
+    filepaths              [List] All filepaths from the directory ending in .npz.
+                            Assumed to be heracasa.
 
     file_dict              [Dictionary] Dictionary of npz files, keyed by their date.
 
@@ -495,24 +494,25 @@ class Julian_Parse(object):
 
     __init__()             Initialises an instance of class Julian_Parse.
 
-    __find_unique_dates()  Finds all unique dates and returns the ordered list of the set of dates.
+    __find_unique_dates()  Finds all unique dates and returns the ordered list
+                           of the set of dates.
 
-    __build_visibility_dict() Takes the ordered list of the set of dates, and filepaths and sorts
-                           them into file_dict.
+    __build_visibility_dict() Takes the ordered list of the set of dates, and
+                              filepaths and sorts them into file_dict.
 
     break_up_datestamps()  Creates file_dict.
 
     return_datestamps()    Returns self.file_dict, self.date_set.
 
-    TODO: Some sort of date ranging so you can control how much data we push through the binner.
+    TODO: Some sort of date ranging so you can control how much data we push
+          through the binner.
     """
 
     # We assume all .npz files have 60 timestamps in them.
     def __init__(self, filepaths, date_start, date_end, npz_size=60):
         """
         Initialises the Julian Parse Class which takes a full directory of
-        heracasa .npz files and splits them by date.
-
+        heracasa .npz files and splits them by date
         """
 
         self.filepaths = filepaths
@@ -523,13 +523,10 @@ class Julian_Parse(object):
 
     # Parses all datestamps and converts to a set (finds unique values)
     def __find_unique_dates(self, filepaths):
-        """
-        Find unique dates from a directory of heracasa files.
+        """Find unique dates from a directory of heracasa files
 
         Inputs:
-
         filepaths [List] List of all .npz filepaths
-
         """
 
         detected_datestamps = []
@@ -544,15 +541,11 @@ class Julian_Parse(object):
     # Takes set of datestamps and filepaths and sorts them into a dict.
     # Dict layout is [Key: datestamp, Data: list of all files in that datestamp]
     def __build_visibility_dict(self, datestamps, filepaths):
-        """
-        Splits the filepaths into a dictionary keyed by their Julian Date
+        """Splits the filepaths into a dictionary keyed by their Julian Date
 
         Inputs:
-
         datestamps [List] An ordered list of the datestamps.
-
         filepaths [List] List of al .npz filepaths.
-
         """
         file_dict = {}
 
@@ -574,7 +567,6 @@ class Julian_Parse(object):
     def break_up_datestamps(self):
         """
         Breaks up the directory of .npz files into a dictionary, keyed by date.
-
         """
         print("Parsing visibility directory... ", end="")
         detected_datestamps = self.__find_unique_dates(self.filepaths)
@@ -595,10 +587,7 @@ class Julian_Parse(object):
 
     # Returns dictionary.
     def return_datestamps(self):
-        """
-        Returns file_dict and date_set
-
-        """
+        """Returns file_dict and date_set"""
         return self.file_dict, self.date_set
 
 
@@ -608,10 +597,6 @@ def main():
     command = argparse.ArgumentParser(formatter_class=argparse.RawDescriptionHelpFormatter, description=textwrap.dedent('''
     ---------------------------------------------------------------------------------------
     HERA LST Aligner and Binner
-
-    Author: Matyas Molnar
-    Institution: University of Cambridge, 2018
-    Email: mdm49@cam.ac.uk
 
     Takes a directory of heracasa created visibilities (best created using recipe),
     and concatenates all of the .npz files together, aligns the sidereal times, and
@@ -656,11 +641,11 @@ def main():
     files, dates = parser.return_datestamps()
 
     print("Number of days: %d" % len(dates))
-    # Instantiate LST_alignment class and align timestamps.
+    # Instantiate LST_alignment class and align timestamps
     print("Aligning LST's (use first day as reference)...")
     aligner = LST_Alignment(args.filepath, dates, files)
     aligned_lsts, visibilities = aligner.align_timestamps()
-    # Instantiate LST_binner class class, then bin LSTS and save to file.
+    # Instantiate LST_binner class class, then bin LSTS and save to file
     print("Bin LST's...")
     binner = LST_Binner(aligned_lsts, visibilities, lst_start=args.lst_start,
                         lst_end=args.lst_end, baseline_no=aligner.baseline_no, channels=args.channel_number)

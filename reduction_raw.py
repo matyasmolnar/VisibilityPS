@@ -6,7 +6,8 @@ Data reduction steps for HERA IDR2 visibilities in miriad file format:
         - Bad antennas removed
         - Band edges flagged
         - Autocorrelations flagged
-    3. Visibilities are fringe rotated to the Fornax A coordinates
+    3. OPTIONAL: Visibilities are fringe rotated to the calibration point source.
+       This step is for imaging purposes.
     4. The visibilities are saved as an ndarray to an npz file
 """
 
@@ -16,36 +17,35 @@ import multiprocessing
 import os
 import shutil
 
-from vis_utils import get_data_paths, cleanspace
+from calibration_functions import cv, gcflagdata, fringerot, mkinitmodel, kc_cal, \
+bandpass_cal, dosplit, cleaninit, cleanfinal
 from idr2_info import idr2_jds, idr2_ants, idr2_bls, idr2_bad_ants_casa
+from vis_utils import get_data_paths, cleanspace
 
 
-##############################################################
-###### Modify the inputs in this section as appropriate ######
-##############################################################
+#############################################################
+####### Modify the inputs in this section as required #######
+#############################################################
 
 # Directory of visibilities in miriad file format to reduce
 DataDir = "/rds/project/bn204/rds-bn204-asterics/HERA/data"
 # Output directory
-OutDir = "/rds/project/bn204/rds-bn204-asterics/mdm49/IDR2_raw"
+procdir = "/rds/project/bn204/rds-bn204-asterics/mdm49/IDR2_raw"
 
-# Polarization of visibilities to process
-Pol = "xx"
-# Select days to process
-InDays = idr2_jds[-2:]
-# OPTIONAL: can further select times by specifying an InTimes arrays
-InTimes = [] # e.g. [12552]
+Pol = 'xx' # Polarization of visibilities to process
+InDays = idr2_jds[-2:] # Select days to process
+InTimes = [] # OPTIONAL: select times e.g. [12552]
 
 # Multiprocessing specification
 NUMBER_OF_CORES = 8
 
-# Remove all files in OutDir
+# Remove all files in procdir
 clean_dir = True
 
 # Check status of data reduction steps for each visibility dataset
 conversion_verbose = True
 
-##############################################################
+#############################################################
 
 
 def npz_conversion(uvin, rm_ms=True, verbose=conversion_verbose):
@@ -58,15 +58,18 @@ def npz_conversion(uvin, rm_ms=True, verbose=conversion_verbose):
         logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(message)s')
 
     logging.info('Reducing miriad dataset {}'.format(uvin))
-    ms = cv(uvin)
-    logging.info('Miriad converted to ms file format')
+    if os.path.basename(dataset).endswith('.uv'):
+        ms = cv(uvin)
+        logging.info('Miriad converted to ms file format')
+    else:
+        ms = uvin
 
     IDR_JD, IDR_time = ms.split('.')[1:3]
-    gcflagdata(ms, IDR_JD)
+    gcflagdata(ms, 'IDR2', cut_edges=True, bad_chans=None)
     logging.info('{} flagged'.format(ms))
 
     fringerot(ms)
-    logging.info('fringe rotated'.format(ms))
+    logging.info('{} fringe rotated'.format(ms))
 
     npz = genvisibility(ms, baseline=idr2_bls, alist=idr2_ants)
     logging.info('Saved to {}\n'.format(npz))
@@ -82,8 +85,8 @@ def multiprocess_wrapper(files):
 
 def main():
     if clean_dir:
-        cleanspace(OutDir)
-    os.chdir(OutDir)
+        cleanspace(procdir)
+    os.chdir(procdir)
 
     InData = get_data_paths(DataDir, Pol, InDays, InTimes)
 

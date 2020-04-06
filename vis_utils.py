@@ -6,7 +6,7 @@ import os
 import shutil
 
 
-def get_data_paths(data_dir, pol, in_days, in_times=None, file_format='uv'):
+def get_data_paths(data_dir, pol, in_days, in_times=None, file_format=None):
     """Retrieve the paths of selected visibility datasets
 
     Select the datasets to by JD and LST
@@ -15,6 +15,8 @@ def get_data_paths(data_dir, pol, in_days, in_times=None, file_format='uv'):
     :param in_times: Decimal part of JD to select
     :param file_format: Format of data to be selected (e.g. miriad -> uv)
     """
+    if not file_format:
+        file_format = '*'
     in_data = []
     for in_day in InDays:
         if in_times:

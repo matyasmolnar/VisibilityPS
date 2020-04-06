@@ -58,7 +58,7 @@ module load rhel7/default-peta4            # REQUIRED - loads the basic environm
 #! Insert additional module load commands after this line if needed:
 
 #! Full path to application executable:
-application="/home/mdm49/casa-release-4.7.2-el7/bin/python /rds/project/bn204/rds-bn204-asterics/mdm49/master_conversion_python.py"
+application="/home/mdm49/casa-release-4.7.2-el7/bin/python /rds/project/bn204/rds-bn204-asterics/mdm49/VisibilityPS/casa_uv_cal.py"
 
 #! Run options for the application:
 options=""

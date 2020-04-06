@@ -53,10 +53,6 @@ def npz_conversion(uvin):
     return npz
 
 
-# checking quality of calibrated data with imaging and gain / delay calibration plots
-# clean(vis=msin, niter=0, imagename='test.img', weighting='briggs', robust=0, imsize=[512,512], cell=['250arcsec'], mode='mfs')
-
-
 def multiprocess_wrapper(files):
     for f in files:
         npz_conversion(f)
@@ -101,20 +97,6 @@ def main():
 
 if ProcessData:
     main()
-
-
-###################################################
-
-# def mjd_to_jd(zen):
-#     casa.tb.open(zen)
-#     time_obs = tb.getcol("TIME")
-#     # exposure = tb.getcol("EXPOSURE")
-#     casa.tb.close()
-#
-#     time_stamp = time_obs[0] # units of second, follows MJD
-#     mjd_day = time_stamp / 60 / 60 / 24
-#     jd_day = au.mjdToJD(mjd_day)
-#     return(jd_day)
 
 
 # # main script for batch calibration - no multiprocess
