@@ -1,5 +1,4 @@
-"""Antenna and baseline information for the H1C_IDR2 HERA dataset
-"""
+"""Antenna and baseline information for the H1C_IDR2 HERA dataset"""
 
 
 import numpy as np
@@ -51,6 +50,6 @@ bad_ants_list = [
     ]
 idr2_bad_ants[1, :] = np.array([np.array(bad_ants_jd)
                            for bad_ants_jd in bad_ants_list])
-# Converting antenna numbers from HERA to CASA numbering (add 1)
+# Converting antenna numbers from HERA to CASA numbering by adding 1
 idr2_bad_ants_casa = np.copy(idr2_bad_ants)
 idr2_bad_ants_casa[1, :] += 1

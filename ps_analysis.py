@@ -7,6 +7,10 @@ days and baselines.
 To use on CSD3 must have the astroenv conda environment activated:
 $ module load miniconda3-4.5.4-gcc-5.4.0-hivczbz
 $ source activate astroenv
+
+TODO:
+    - Add baseline functionality for EW, NS, 14m, 28m, individual baselines etc
+      (although this done before export to npz..?)
 """
 
 
@@ -25,7 +29,9 @@ sns.set()
 sns.set_style("whitegrid")
 
 
-#####################################################################################################
+#############################################################
+####### Modify the inputs in this section as required #######
+#############################################################
 
 # Inputs:
 
@@ -72,7 +78,8 @@ channel_end = 250
 fig_path = '/rds/project/bn204/rds-bn204-asterics/mdm49/'
 savefigs = False
 
-#####################################################################################################
+#############################################################
+
 
 if statistic_all_IDR2:
     chosen_days = IDR2
@@ -715,10 +722,3 @@ def baseline_ps_analysis(ps):
 
 
 baseline_ps_analysis(vis_ps_final)
-
-
-# rm ~/Desktop/baseline_analysis.pdf
-# scp mdm49@login-cpu.hpc.cam.ac.uk:/rds/project/bn204/rds-bn204-asterics/mdm49/baseline_analysis.pdf ~/Desktop/
-
-
-# Add baseline functionality for EW, NS, 14m, 28m, individual baselines etc. - although this done before export to npz?

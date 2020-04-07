@@ -1,39 +1,33 @@
-"""Power spectrum compuation for visibilities
+"""Power spectrum computation of visibility amplitudes
+
+Power spectrum computation of the amplitudes of a visibility dataset in
+measurement set file format.
 
 TODO:
-Select only shortest EW baselines and avaerage visibility amplitudes over those
-to get power spectrum [done?]
-
-Work with corrected data and compare visibilities before and after calibration
-and cleaning maybe need to split corrected data and work with that
-
-Average visibilities over different days, but same LST
-How long is maximum exposure, can HERA (or CASA) track?
+    - Better way of selecting shortest EW baselines
+    - Work with corrected data and compare visibilities before and after calibration
+    and calibration + cleaning
 """
 
 
-import sys
 import os
+import pickle
+import sys
+
 import casac
 import numpy as np
+from matplotlib import pyplot as plt
 from scipy import signal
-import matplotlib.pyplot as plt
-import pickle
 
 
-cc = 2.99792458e10
-
-
-def import_uv(din):
-    """Makes a new measurement set from uvfits dataset"""
-    msname = os.path.splitext(os.path.basename(din))[0]+".ms"
-    importuvfits(din, msname)
-    return msname
+DataDir = '/Volumes/TOSHIBA_EXT/HERA_Data/imaging/hera67_2458098.35667_FornaxA/'
+InMS = 'zen.2458098.35667.xx.HH.ms'
+procdir = DataDir
 
 
 class Visibility:
     """
-    Creates visibility class objectself.
+    Creates visibility class object.
 
     Attributes:
         VV          Final data (Re + Im)
@@ -50,8 +44,8 @@ class Visibility:
 
     def __init__(self, VV, uu, vv, wgts, freqs, time, res, ant1, ant2, flags):
         self.VV = np.array(VV) # [Jy]
-        self.uu = np.array(uu) # [lambda]
-        self.vv = np.array(vv) # [lambda]
+        self.uu = np.array(uu) # [m]
+        self.vv = np.array(vv) # [m]
         self.wgts = np.array(wgts) # [Jy^-2]
         self.freqs = np.array(freqs) # [Hz]
         self.time = np.array(time)
@@ -67,10 +61,9 @@ def import_data_ms(filename):
     tb = casac.casac.table()
     ms = casac.casac.ms()
 
-    # Use CASA table tools to get columns of UVW, DATA, WEIGHT, etc.
+    # Antenna information
     tb.open(filename)
     data = tb.getcol("DATA")
-    # cor_data = tb.getcol("CORRECTED_DATA")
     uvw = tb.getcol("UVW")
     weight = tb.getcol("WEIGHT")
     ant1 = tb.getcol("ANTENNA1")
@@ -79,32 +72,24 @@ def import_data_ms(filename):
     time = tb.getcol("TIME")
     tb.close()
 
-    # get corrected data (includes flagging, calibration, cleaning)
-    # ms.open(filename)
-    # data = tb.getcol("CORRECTED_DATA")
-    # tb.close()
-
+    # Spectral window information
     ms.open(filename)
-    # Use CASA ms tools to get the channel/spw info
     spw_info = ms.getspectralwindowinfo()
     nchan = spw_info["0"]["NumChan"]
     npol = spw_info["0"]["NumCorr"]
-    # data = ms.getdata("CORRECTED_DATA")
     ms.close()
 
-    # Use CASA table tools to get frequencies
+    # Frequency information
     tb.open(filename+"/SPECTRAL_WINDOW")
     freqs = tb.getcol("CHAN_FREQ")
     rfreq = tb.getcol("REF_FREQUENCY")
     resolution = tb.getcol("CHAN_WIDTH")
     tb.close()
 
-    # break out the u, v spatial frequencies, convert from m to lambda
-    uu = uvw[0, :] * rfreq / (cc / 100)
-    vv = uvw[1, :] * rfreq / (cc / 100)
+    uu = uvw[0, :]
+    vv = uvw[1, :]
 
-    # check to see whether the polarizations are already averaged
-    # data has dimensions (baselines, visibilities)
+    # Check if pols are already averaged
     data = np.squeeze(data)
     weight = np.squeeze(weight)
     flags = np.squeeze(flags)
@@ -132,7 +117,7 @@ def import_data_ms(filename):
                  Im_yy*weight_yy) / (weight_xx + weight_yy), 0.)
         wgts = (weight_xx + weight_yy)
 
-    # Toss out the autocorrelation placeholders
+    # Toss out the autocorrelations
     xc = np.where(ant1 != ant2)[0]
 
     # Check if there's only a single channel
@@ -146,14 +131,14 @@ def import_data_ms(filename):
         flags = flags[:, xc]
 
         # If the majority of points in any channel are flagged, it probably
-        # means someone flagged an entire channel - spit warning
+        # means an entire channel is flagged - spit warning
         if np.mean(flags.all(axis=0)) > 0.5:
-            print("WARNING: Over half of the (u,v) points in at least one \
+            print('WARNING: Over half of the (u,v) points in at least one \
             channel are marked as flagged. If you did not expect this, it is \
             likely due to having an entire channel flagged in the ms. Please \
-            double check this and be careful if model fitting or using diff mode.")
+            double check this and be careful if model fitting or using diff mode.')
 
-        # collapse flags to single channel, because weights are not currently channelized
+        # Collapse flags to single channel, because weights are not currently channelized
         flags = flags.any(axis=0)
 
     data_wgts = wgts[xc]
@@ -174,62 +159,44 @@ def import_data_ms(filename):
                       resolution, ant1, ant2, flags)
 
 
-def main():
-    msfile = '/Volumes/TOSHIBA_EXT/HERA_Data/imaging/hera67_2458098.35667_FornaxA/\
-              zen.2458098.35667.xx.HH.ms'
-    vis_data = import_data_ms(msfile)
-
-    # Saving visibility class with pickle for later use
-    # with open("vis_data.file", "wb") as f:
-    #     pickle.dump(vis_data, f, pickle.HIGHEST_PROTOCOL)
-    # with open("vis_data.file", "rb") as f:
-    #     vis_data = pickle.load(f)
-
-    flags = vis_data.flags
-    vis_freqs = np.squeeze(vis_data.freqs)
-    vis_res = vis_data.res.item(0)
-    exposure = vis_data.time[-1] - vis_data.time[0]
-    ant1 = vis_data.ant1
-    ant2 = vis_data.ant2
-
-    # Has dimensions (baselines, frequency channels) and has complex visibility entries.
-    vis_amps = np.squeeze(np.absolute(vis_data.VV))[flags, :]
+def plot_ps_bl(amps, bl_no):
+    """Plot the power spectrum for a single baseline"""
+    vis_bl = vis_amps[bl_no,:]
+    delay, Pxx_spec = signal.periodogram(vis_bl, 1./vis_res, 'flattop', \
+                                         scaling='spectrum', nfft=128)
+    plt.figure()
+    plt.semilogy(delay, np.sqrt(Pxx_spec))
+    plt.title('Visibility amplitude PS for baseline {}'.format(bl_no))
+    plt.xlabel('Geometric delay [s]')
+    plt.ylabel('Power spectrum [Amp RMS]')
+    plt.show()
 
 
-    def PS_bl():
-    """PS for single (test) baseline"""
-        vis_baseline_1 = vis_amps[1,:]
-        delay, Pxx_spec = signal.periodogram(vis_baseline_1, 1./vis_res, 'flattop', \
-                                             scaling='spectrum', nfft=128)
-        plt.figure()
-        plt.semilogy(delay, np.sqrt(Pxx_spec))
-        plt.xlabel('Geometric delay [s]')
-        plt.ylabel('Power spectrum [Amp RMS]')
-        plt.show()
+
+def compute_ps(amps, res, infft=2**7):
+    """Compute power spectra for all baselines
+
+    :param amps: Visibility amplitudes
+    :param resolution: Resolution of visibility measurements
+    :param infft: Length of the FFT used
+    """
+    infft = 2**7 # Length of the FFT used
+    # Finding dimension of returned delays
+    delay_test, Pxx_spec_test = signal.periodogram(
+        amps[1, :], 1./res, 'flattop', scaling='spectrum', nfft=infft)
+    # How many data points the signal.periodogram calculates
+    delayshape = delay_test.shape[0] # dimensions are [baselines, (delay, Pxx_spec), delayshape]
+    vis_ps = np.zeros((amps.shape[0], 2, delayshape))
+    for i in range(0, amps.shape[0]):  # Iterating over all baselines
+        delay, Pxx_spec = signal.periodogram(
+            amps[i, :], 1./res, 'flattop', scaling='spectrum', nfft=infft, \
+            detrend='linear')
+        vis_ps[i, :, :] = [delay, Pxx_spec]
+    return vis_ps
 
 
-# create ndarray for PS of all baselines
-    def compute_ps():
-        # Length of the FFT used
-        infft = 2**7
-        # Finding dimension of returned delays
-        delay_test, Pxx_spec_test = signal.periodogram(
-            vis_amps[1, :], 1./vis_res, 'flattop', scaling='spectrum', nfft=infft)
-        # how many data points the signal.periodogram calculates
-        delayshape = delay_test.shape[0] # dimensions are [baselines, (delay, Pxx_spec), delayshape]
-        vis_ps = np.zeros((vis_amps.shape[0], 2, delayshape))
-        for i in range(0, vis_amps.shape[0]):  # Iterating over all baselines
-            delay, Pxx_spec = signal.periodogram(
-                vis_amps[i, :], 1./vis_res, 'flattop', scaling='spectrum', nfft=infft, \
-                detrend='linear')
-            vis_ps[i, :, :] = [delay, Pxx_spec]
-        return vis_ps
-
-
-    power_spectra = compute_ps()
-    print('Power_spectra ndarray has dimensions {}'.format(power_spectra.shape))
-
-    # create masks to only include shortest baselines
+def shortest_ew_mask():
+    """Creates masks to only include shortest EW baselines"""
     vis_u = vis_data.uu
     vis_v = vis_data.vv
     uv_dist = np.sqrt(np.square(vis_u) + np.square(vis_v))
@@ -247,6 +214,33 @@ def main():
 
     # total mask selecting only the shortest EW consecutive baselines
     total_mask = shortest_baselines.mask & ew_baselines.mask & consec_baselines.mask & flags
+    return total_mask
+
+
+def main():
+    os.chdir(procdir)
+    InData = os.path.join(DataDir, InMS)
+    vis_class = os.path.splitext(InMS)[0] + 'vis_class.npz'
+    if os.path.exists(vis_class):
+        with open(vis_class, 'rb') as file:
+            vis_data = pickle.load(file)
+    else:
+        vis_data = import_data_ms(msfile)
+        with open(vis_class, 'wb') as file:
+            pickle.dump(vis_data, file, pickle.HIGHEST_PROTOCOL)
+
+    flags = vis_data.flags
+    vis_freqs = np.squeeze(vis_data.freqs)
+    vis_res = vis_data.res.item(0)
+    exposure = vis_data.time[-1] - vis_data.time[0]
+    ant1 = vis_data.ant1
+    ant2 = vis_data.ant2
+
+    # Dimensions (baselines, freq chans) and has complex entries
+    vis_amps = np.squeeze(np.absolute(vis_data.VV))[flags, :]
+
+    power_spectra = compute_ps(vis_amps, vis_res)
+    print('Power_spectra ndarray has dimensions {}'.format(power_spectra.shape))
 
     vis_amps_short_ew = vis_amps[total_mask, :]
     power_spectra_short_ew = power_spectra[total_mask, :, :]
@@ -259,7 +253,7 @@ def main():
     plt.savefig('test.pdf', format='pdf')
     plt.show()
 
-    # Finding which baselines / antenna pairs to be used when extracting more visibility data for IDR2
+    # Finding which baselines to be used when extracting more visibility data for IDR2
     ant1_ew = ant1[total_mask]
     ant2_ew = ant2[total_mask]
     antenna_pairs = np.zeros((2, ant1_ew.shape[0]))
