@@ -21,7 +21,7 @@ import argparse
 import textwrap
 
 
-class LST_Binner(object):
+class LST_Binner:
 
     """
     Class that takes the aligned LSTs and a dictionary of ALL the visibilities
@@ -280,7 +280,7 @@ class LST_Binner(object):
             raise ValueError("LST's not binned")
 
 
-class LST_Alignment(object):
+class LST_Alignment:
     """
     Class takes a dictionary of datestamps and aligns them to each other.
     We take advantage of sidereal time moving 235.9 seconds per day with respect
@@ -474,7 +474,7 @@ class LST_Alignment(object):
 
 
 # This parses all of the files and breaks them up into datestamps. Each datestamp is then aligned correctly.
-class Julian_Parse(object):
+class Julian_Parse:
     """
     Class to take a set of filepaths spat out from heracasa and create a
     dictionary of all the files, keyed by their Julian Date.

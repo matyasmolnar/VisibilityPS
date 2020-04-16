@@ -7,6 +7,7 @@ TODO:
     - Better way of selecting shortest EW baselines
     - Work with corrected data and compare visibilities before and after calibration
     and calibration + cleaning
+    - Sort out calling CASA functions - wait for v6.1?
 """
 
 
@@ -14,15 +15,15 @@ import os
 import pickle
 import sys
 
-import casac
 import numpy as np
 from matplotlib import pyplot as plt
 from scipy import signal
 
+from calibration_functions import cv
 
-DataDir = '/Volumes/TOSHIBA_EXT/HERA_Data/imaging/hera67_2458098.35667_FornaxA/'
-InMS = 'zen.2458098.35667.xx.HH.ms'
-procdir = DataDir
+
+DataDir = '/Users/matyasmolnar/Downloads/HERA_Data/test_data'
+InMS = 'zen.2458098.31939.xx.HH.uv'
 
 
 class Visibility:
@@ -203,9 +204,11 @@ def shortest_ew_mask():
     shortest_baselines = np.ma.masked_where(
         uv_dist < (np.amin(uv_dist) + 1), vis_u)
 
-    # create mask to only include EW baselines -- constraint on v distance. Not sufficient as v distance changes with time, thus other longer baselines will be included in this.
-    # plt.hist(vis_v, bins = 1000)
-    # check that vis_v[0] corresponds to shortest baseline between antenna 1 and antenna 2 (do plotants(zen) in CASA)
+    # create mask to only include EW baselines -- constraint on v distance. Not
+    # sufficient as v distance changes with time, thus other longer baselines
+    # will be included in this.
+    # check that vis_v[0] corresponds to shortest baseline between antenna 1 and
+    # antenna 2 (do plotants(zen) in CASA)
     ew_baselines = np.ma.masked_where(vis_v < (vis_v[0]*1.5), vis_u)
 
     # make sure antenna number consecutive
@@ -218,15 +221,27 @@ def shortest_ew_mask():
 
 
 def main():
-    os.chdir(procdir)
+    if verbose:
+        logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(message)s')
+
+    logging.info('Running PS computations for visibility dataset {}'.format(InMS))
+    os.chdir(DataDir)
     InData = os.path.join(DataDir, InMS)
+
     vis_class = os.path.splitext(InMS)[0] + 'vis_class.npz'
     if os.path.exists(vis_class):
         with open(vis_class, 'rb') as file:
+            logging.info('Reading npz visibility dataset {}'.format(os.path.basename(vis_class)))
             vis_data = pickle.load(file)
     else:
-        vis_data = import_data_ms(msfile)
+        if InMS.endswith('.uv'):
+            logging.info('Converting uv file to ms')
+            ms = cv(InMS)
+        else:
+            ms = InMS
+        vis_data = import_data_ms(ms)
         with open(vis_class, 'wb') as file:
+            logging.info('Saving ms file to npz')
             pickle.dump(vis_data, file, pickle.HIGHEST_PROTOCOL)
 
     flags = vis_data.flags
@@ -240,7 +255,7 @@ def main():
     vis_amps = np.squeeze(np.absolute(vis_data.VV))[flags, :]
 
     power_spectra = compute_ps(vis_amps, vis_res)
-    print('Power_spectra ndarray has dimensions {}'.format(power_spectra.shape))
+    # print('Power_spectra ndarray has dimensions {}'.format(power_spectra.shape))
 
     vis_amps_short_ew = vis_amps[total_mask, :]
     power_spectra_short_ew = power_spectra[total_mask, :, :]
@@ -267,3 +282,7 @@ def main():
     unique_ant_pairs_t = list(sorted(set(tuple(row) for row in ant_pairs_list)))
     unique_ant_pairs = list(list(row) for row in unique_ant_pairs_t)
     print(unique_ant_pairs, end='')
+
+
+if __name__ == "__main__":
+    main()
