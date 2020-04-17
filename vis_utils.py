@@ -5,6 +5,8 @@ import glob
 import os
 import shutil
 
+import numpy
+
 
 def get_data_paths(data_dir, pol, in_days, in_times=None, file_format=None):
     """Retrieve the paths of selected visibility datasets
