@@ -56,7 +56,11 @@ def flt_data_paths(in_data):
 
 
 def cleanspace(dir):
-    """Removes all files in specified directory"""
+    """Removes all files in specified directory
+
+    :param dir: Directory path
+    :type dir: str
+    """
     shutil.rmtree(dir, ignore_errors=True)
     os.mkdir(dir)
 
