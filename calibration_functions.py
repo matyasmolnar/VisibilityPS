@@ -34,11 +34,11 @@ def cv(uvin):
     Conversion from miriad to ms done with the intermediate step of converting
     to intermediate uvfits file format
 
-    :param uvin: Visibility dataset in miriad file format
-    :type uvin: miriad
+    :param uvin: Visibility dataset in miriad file format path
+    :type uvin: str
 
-    :returns: Visibility dataset in ms file format
-    :rtype: Measurement set
+    :returns: Visibility dataset in measurement set format path
+    :rtype: str
     """
     fitsi = os.path.splitext(os.path.basename(uvin))[0] + ".uvfits"
     uvconv.cvuvfits(uvin, fitsi)
@@ -52,11 +52,16 @@ def cv(uvin):
 def get_bad_ants(msin, bad_ants_arr, verbose=True):
     """Get the bad antennas for HERA for a given JD
 
-    :param msin: Visibility dataset
-    :type msin: Measurement set
+    :param msin: Visibility dataset in measurement set format path
+    :type msin: str
     :param bad_ants_arr: Mapping of JDs to bad antennas. For IDR2, bad_ants_arr
-                         = idr2_bad_ants_casa, and can be found in idr2_info.py
+    = idr2_bad_ants_casa, and can be found in idr2_info
     :type bad_ants_arr: ndarray of shape shape (2, no_ants)
+    :param verbose: Verbose
+    :type verbose: bool
+
+    :returns: Bad antennas
+    :rtype: ndarray
     """
     JD = int(msin.split('.')[1]) # Get JD from filename
     bad_ants_index = np.where(bad_ants_arr[0, :] == JD)[0][0]
@@ -69,8 +74,8 @@ def get_bad_ants(msin, bad_ants_arr, verbose=True):
 def gcflagdata(msin, bad_ants, cut_edges=True, bad_chans=None):
     """Flag bad antennas for visibility dataset
 
-    :param msin: Visibility dataset
-    :type msin: Measurement set
+    :param msin: Visibility dataset in measurement set format path
+    :type msin: str
     :param bad_ants: Bad antennas to flag - can be specified by a list of
                      antennas, or can be given by a string specifying the
                      data release
@@ -113,8 +118,10 @@ def gcflagdata(msin, bad_ants, cut_edges=True, bad_chans=None):
 
 
 def fringerot(msin, phasecenter):
-    """Fringe rotate visibilities
+    """Fringe rotate visibilities inplace
 
+    :param msin: Visibility dataset in measurement set format path
+    :type msin: str
     :param phasecenter: J2000 coordinates of point source model or name of well-known
     radio object
     :type phasecenter: str
@@ -125,7 +132,6 @@ def fringerot(msin, phasecenter):
         phasecenter = GC_coords
 
     casa.fixvis(msin, msin, phasecenter=phasecenter)
-    return msin
 
 
 def mkinitmodel(coords, **kwargs):
@@ -134,6 +140,9 @@ def mkinitmodel(coords, **kwargs):
     :param coords: J2000 coordinates of point source model or name of well-known
     radio object
     :type coords: str
+
+    :return: Point source model file path
+    :rtype: str
     """
 
     # Check if point source model has already been created
@@ -157,19 +166,50 @@ def mkinitmodel(coords, **kwargs):
 
 
 def dosplit(msin, inf, datacolumn='corrected', spw=''):
-    """Split the initial calibrated data"""
+    """Split the initial calibrated data into a visibility subset
+
+    :param msin: Visibility dataset in measurement set format path
+    :type msin: str
+    :param inf: Split extension
+    :type inf: str
+    :param datacolumn: Data column to split
+    :type datacolumn: str
+    :param spw: Select spectral window
+    :type spw: str
+
+    :return: Visibility subset in measurement set format path
+    :rtype: str
+    """
     newms = os.path.basename(msin) + inf + '.ms'
     casa.split(msin, newms, datacolumn=datacolumn, spw=spw)
     return newms
 
 
 def calname(msin, cal_type):
-    """Build calibrator name based on filename"""
+    """Build calibrator name based on filename
+
+    :param msin: Visibility dataset in measurement set format path
+    :type msin: str
+    :param cal_type: Type of calibrator (e.g. gain, bandpass)
+    :type cal_type: str
+
+    :return: Calibrator path
+    :rtype: str
+    """
     return os.path.basename(m) + cal_type + '.cal'
 
 
 def kc_cal(msin, model_cl):
-    """Get gain and delay calibration solutions"""
+    """Get gain and delay calibration solutions
+
+    :param msin: Visibility dataset in measurement set format path
+    :type msin: str
+    :param model_cl: Point source model path
+    :type model_cl: str
+
+    :return: Calibration solutions tables
+    :rtype: list
+    """
     # Fill the model column
     casa.ft(msin, complist=model_cl, usescratch=True)
 
@@ -186,7 +226,14 @@ def kc_cal(msin, model_cl):
 
 
 def bandpass_cal(msin):
-    """Bandpass calbration"""
+    """Bandpass calbration
+
+    :param msin: Visibility dataset in measurement set format path
+    :type msin: str
+
+    :return: Calibration solutions table
+    :type: str
+    """
     bc = calname(msin, 'B')
     casa.bandpass(vis=msin, minsnr=1, solnorm=False, bandtype='B', caltable=bc)
     casa.applycal(msin, gaintable=[bc])
@@ -194,7 +241,15 @@ def bandpass_cal(msin):
 
 
 def cleaninit(msin, cal_source):
-    """First CLEANing round"""
+    """First CLEANing round
+
+    :param msin: Visibility dataset in measurement set format path
+    :type msin: str
+    :param cal_source: Calibration source for masking
+    :type cal_source: str
+
+    TODO: Argument to specify mask
+    """
     imgname = os.path.basename(msin) + '.init.img'
     if cal_source in cal_source_dct.keys():
         clean_mask = cal_source_dct[cal_source]['mask']
@@ -214,7 +269,13 @@ def cleaninit(msin, cal_source):
 
 
 def cleanfinal(msin, cal_source):
-    """Second CLEANing round and imaging"""
+    """Second CLEANing round and imaging
+
+    :param msin: Visibility dataset in measurement set format path
+    :type msin: str
+    :param cal_source: Calibration source for masking
+    :type cal_source: str
+    """
     imgname = os.path.basename(msin) + '.fin.img'
     if cal_source in cal_source_dct.keys():
         clean_mask = cal_source_dct[cal_source]['mask']
@@ -236,10 +297,17 @@ def cleanfinal(msin, cal_source):
     casa.imregrid(imagename=imgname+'.image', output=imggal, template='GALACTIC')
 
 
-def genvisibility(fin, **kwargs):
-    """Save the calibrated data arrays to npz file format"""
-    fout = os.path.split(fin)[-1] + '.npz'
-    r = hc.vis(fin, baseline=idr2_ants, alist=idr2_bls)
+def genvisibility(msin, **kwargs):
+    """Save the calibrated data arrays to npz file format
+
+    :param msin: Visibility dataset in measurement set format path
+    :type msin: str
+
+    :return: Visibility data saved to npz file
+    :rtype: str
+    """
+    fout = os.path.split(msin)[-1] + '.npz'
+    r = hc.vis(msin, baseline=idr2_ants, alist=idr2_bls)
     np.savez(fout, **r)
     if not os.path.exists(fout):
         raise RuntimeError('No output produced by heracasa.closure.vis')
@@ -247,7 +315,11 @@ def genvisibility(fin, **kwargs):
 
 
 def plot_ms(msin):
-    """Plotting of visibilities in CASA"""
+    """Plotting of visibilities in CASA
+
+    :param msin: Visibility dataset in measurement set format path
+    :type msin: str
+    """
     # Evaluate total time of observation
     casa.tb.open(msin)
     time_obs = tb.getcol('TIME')
