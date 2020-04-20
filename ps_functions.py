@@ -54,7 +54,8 @@ ps_complex_analysis = True
 # LAST to analyze
 LAST = 3.31
 
-# statistic in time between consecutive sessions - if False, closest time bin to LAST will be chosen
+# statistic in time between consecutive sessions - if False, closest time bin
+# to LAST will be chosen
 last_statistic = True
 last_statistic_period = 40  # seconds; choose between {20,60}
 last_statistic_method = 'median'  # {median, mean}
@@ -67,7 +68,8 @@ InJDs = [2458098, 2458099, 2458101, 2458102, 2458103, 2458104, 2458105, 2458106,
 
 days_statistic = 'median'  # {median, mean}
 
-amp_clip = True  # sigma clip according to amplitudes? if vis_complex_analysis, will still mask according to behaviour of amplitudes
+amp_clip = True  # sigma clip according to amplitudes? if vis_complex_analysis,
+# will still mask according to behaviour of amplitudes
 
 sigma_clip_days = True
 sc_days_stds = 5.0
@@ -155,44 +157,42 @@ def find_mis_days(last, mod_z_tresh=3.5):
     end_zscores = np.where(mod_zscore(start_last) > mod_z_tresh)[0]
     mis_days_idx = list(set(start_zscores & end_zscores))
     mis_days = days[mis_days_idx]
-    print('Misaligned days: {} - check alignment'.format(mis_days))
+    if mis_days.size:
+        print('Misaligned days: {} - check alignment'.format(mis_days))
     return mis_days
 
 
-misaligned_days = find_mis_days(last)
 # Removing days that do not appear in InJDs and that are not misaligned
+misaligned_days = find_mis_days(last)
 flt_days = [day for day in list(set(InJDs) & set(days)) if day not in misaligned_days]
-flt_days_idx = [np.where(days == flt_day)[0][0] for flt_day in flt_days]
+flt_days_indexing = [np.where(days == flt_day)[0][0] for flt_day in flt_days]
 
-# indexing out faulty days due to misalignment
-visibilities = visibilities[:, flt_days_idx, :, :]
-flags = flags[:, flt_days_idx, :, :]
-last = last[:, flt_days_idx]
-days = flt_days
 
-# removing faulty baselines
-faulty_bls = [[50, 51]] # [66, 67], [67, 68], [68, 69],[82, 83], [83, 84], [122, 123]]
-bad_bls_idxs = [np.where(vis_data['baselines'] == faulty_bl) for faulty_bl in \
-                faulty_bls if faulty_bl in vis_data['baselines']]
+# Removing bad baselines
+bad_bls = [[50, 51]] # [66, 67], [67, 68], [68, 69],[82, 83], [83, 84], [122, 123]]
+bad_bls_idxs = [np.where(vis_data['baselines'] == bad_bl) for bad_bl in \
+                bad_bls if bad_bl in vis_data['baselines']]
 bad_bls_idxs = [bad_bls_idx[0][0] for bad_bls_idx in bad_bls_idxs if \
                 bad_bls_idx[0].size==2 and len(set(bad_bls_idxs[0][0]))==1]
-bl_flag = [bl_idx for bl_idx in range(vis_data['baselines'].shape[0]) if \
-           bl_idx not in bad_bls_idxs]
+bl_indexing = [bl_idx for bl_idx in range(vis_data['baselines'].shape[0]) if \
+               bl_idx not in bad_bls_idxs]
 
-# indexing out faulty baselines
-visibilities = visibilities[:, :, bl_flag, :]
-flags = flags[:, :, bl_flag, :]
-baselines = baselines[bl_flag, :]
 
-# only considering specified channel range
-vis_chans_range = visibilities_dayflg_blflg[:, :, :, chans_range]
-flags_chans_range = flags_dayflg_blflg[:, :, :, chans_range]
+# Indexing out bad baselines and only selecting specified channels
+vis_indexing = np.ix_(np.arange(visibilities.shape[0]), flt_days_idx, \
+                      bl_flag, chans_range)
+visibilities = visibilities[vis_indexing]
+flags = flags[vis_indexing]
+baselines = baselines[bl_indexing, :]
+last = last[:, flt_days_indexing]
+days = flt_days
 
 
 # parameter for getting correct grouping of LASTs from last_statistic_periods
 sp = [21, 32, 43, 53, 64]  # possible periods for grouping sessions
 # will average to 21 seconds
-if last_statistic_period >= 20 and last_statistic_period < np.int(np.mean((sp[0], sp[1]))):
+if last_statistic_period >= 20 and last_statistic_period < np.int(np.mean((sp[0], \
+sp[1]))):
     last_statistic_period = 21
     gamma = 1.3
 # will average to 32 seconds
@@ -214,45 +214,45 @@ and last_statistic_period <= 60:
 
 # indexing to obtain LASTs within last_statistic_period
 if last_statistic:
-    a = 1  # for index change later - array will reduced in dimension if indexed for 1 specific LAST
-    # selecting nearest LAST sessions to average over nearest {20,60} second period (try for half either side)
-    # here gamma obtained from trial and error to match desired time averaging with actual averaging
+    a = 1  # for index change later - array will reduced in dimension if indexed
+    # for 1 specific LAST selecting nearest LAST sessions to average over nearest
+    # {20,60} second period (try for half either side) here gamma obtained from
+    # trial and error to match desired time averaging with actual averaging
     last_bound_h = last_statistic_period / 60. / 60. / gamma
     # last_mask_array = np.empty_like(vis_chans_range, dtype=bool)
     # dims = np.zeros_like(vis_chans_range)
-    # find number of LAST bins within last_statistic_period, and index array accordingly
+    # find number of LAST bins within last_statistic_period, and index array
+    # accordingly
     test_idx = np.squeeze(np.where(
-        (last_dayflg[:, 0] < LAST + last_bound_h) & (last_dayflg[:, 0] > LAST - last_bound_h)))
-    vis_last_chans_range = np.zeros_like(vis_chans_range)[test_idx, :, :, :]
-    flags_last_chans_range = np.zeros_like(vis_chans_range)[test_idx, :, :, :]
+        (last[:, 0] < LAST + last_bound_h) & (last[:, 0] > LAST - last_bound_h)))
+    vis_last = np.zeros_like(visibilities)[test_idx, :, :, :]
+    fags_last = np.zeros_like(visibilities)[test_idx, :, :, :]
     actual_avg_all = []
-    # must do this way as not every day will have the same last indices for the times within last_statistic_period
-    for day in range(last_dayflg.shape[1]):
+    # must do this way as not every day will have the same last indices for the
+    # times within last_statistic_period
+    for day in range(last.shape[1]):
         # getting indices of LAST bins that are within last_statistic_period
         chosen_last_idx = np.squeeze(np.where(
-            (last_dayflg[:, day] < LAST + last_bound_h) & (last_dayflg[:, day] > LAST - last_bound_h)))
-        # print(chosen_last_idx)
+            (last[:, day] < LAST + last_bound_h) & (last[:, day] > LAST - last_bound_h)))
         # finding difference between first and last LAST bins used for averaging
-        actual_avg = (last_dayflg[:, day][chosen_last_idx[-1]] -
-                      last_dayflg[:, day][chosen_last_idx[0]]) * 60**2
+        actual_avg = (last[:, day][chosen_last_idx[-1]] -
+                      last[:, day][chosen_last_idx[0]]) * 60**2
         # adding all periods to an array for averaging later to check
         actual_avg_all.append(actual_avg)
-        # print('Actual average in LAST for chosen day(s) '+str(days[i])+' is '+str(actual_avg)+' seconds.')
-        vis_last_chans_range[:, day, :,
-                            :] = vis_chans_range[chosen_last_idx, day, :, :]
-        flags_last_chans_range[:, day, :,
-                              :] = flags_chans_range[chosen_last_idx, day, :, :]
+        # print('Actual average in LAST for chosen day(s) '+str(days[i])+' is '\
+        # +str(actual_avg)+' seconds.')
+        vis_last[:, day, :, :] = visibilities[chosen_last_idx, day, :, :]
+        fags_last[:, day, :, :] = flags[chosen_last_idx, day, :, :]
     print('Actual average in LAST for chosen days is ~{} seconds'.format(
           np.int(np.mean(actual_avg_all))))
     if (np.max(actual_avg_all) - np.min(actual_avg_all)) > 0.1:
         raise ValueError(
             'Combined exposure by joining consecutive sessions inconsistent day \
             to day. Check actual_avg_all values.')
-# chosing specific LAST
+# Choosing specific LAST
 elif not last_statistic:
     a = 0
-    vis_last_chans_range = vis_chans_range[find_nearest(
-        last_dayflg[:, 0], LAST)[1], :, :, :]
+    visibilities = visibilities[find_nearest(np.median(last, axis=1), LAST)[1], :, :, :]
 
 
 # len(np.where(0+0j == vis_last_chans_range)[0])
@@ -528,6 +528,6 @@ else:
     # need to check data is smooth - no gaps
 
 
-# chosing single day
+# Choosing single day
 # if len(InJDs) == 1:
 #     vis_amps_single_day = vis_amps_clipped_lastavg[np.where(days_dayflg == IDRDay)[0][0] ,:,:]
