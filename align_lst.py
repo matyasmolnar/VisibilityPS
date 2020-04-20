@@ -10,10 +10,7 @@ $ casapython align_lst.py --lst_start 1.5 --lst_end 6 --date_start 2458098
 aligned_raw_visibilities
 """
 
-from __future__ import print_function
 
-from astropy.time import Time
-import matplotlib.pyplot as plt
 import os
 import sys
 import numpy
@@ -228,7 +225,7 @@ class LST_Binner:
                                       dtype=numpy.int8)
         # Our baselines.
         self.baseline_array = numpy.zeros(shape=(self.baseline_no, 2))
-        print("    Extracting Fields of Interest... ", end="")
+        print('Extracting Fields of Interest...', end=')
         sys.stdout.flush()
         for i, date in enumerate(sorted(self.visibility_dict.keys())):
             self.day_array[i] = int(date)
@@ -243,12 +240,12 @@ class LST_Binner:
                 self.data_array[lst, i, :, :] = visibilities_at_lst
                 self.flag_array[lst, i, :, :] = flags_at_lst
                 self.baseline_array = self.visibility_dict[date][lst_index]['baselines']
-        print("done")
+        print('done')
         if sigclip == True:
-            print("    Sigma Clipping... ", end="")
+            print('Sigma Clipping... ', end='')
             sys.stdout.flush()
             self.sigclip_array = self.__sigma_clip_baselines(self.data_array)
-            print("done")
+            print('done')
 
     def save_binned_lsts(self, filename):
         """
@@ -277,7 +274,7 @@ class LST_Binner:
                             sigclip=self.sigclip_array)
 
         else:
-            raise ValueError("LST's not binned")
+            raise ValueError('LSTs not binned')
 
 
 class LST_Alignment:
@@ -324,7 +321,7 @@ class LST_Alignment:
                  destructive=True):
         """
         Initialises the LST_Alignment Class which aligns the LST's over successive
-        Julian Dates"
+        Julian Dates
 
         Inputs:
 
@@ -367,7 +364,7 @@ class LST_Alignment:
         visibility_dict = {}
      # Only works in Python 2.x
         for date, npz_files in sorted(self.date_dict.iteritems()):
-            print(".", end="")
+            print('.', end='')
             sys.stdout.flush()
             visibility_dict[date] = {}
             for npz_file in npz_files:
@@ -412,7 +409,7 @@ class LST_Alignment:
         i = 0
         initial_date, initial_lsts = sorted(visibilities.iteritems())[0]
         for date, lst_s in sorted(visibilities.iteritems()):
-            print(".", end="")
+            print('.', end='')
             sys.stdout.flush()
             # print(lst_s)
             # print(len(lst_s))
@@ -457,9 +454,9 @@ class LST_Alignment:
         LST's, which can be used by the LST_Binner class to extract visibilities of
         choice across successive days.
         """
-        print("Aggregating visibility dictionary to array (can take a while)...")
+        print('Aggregating visibility dictionary to array (can take a while)...')
         visibility_dict = self.__extract_visibilities()
-        print("done")
+        print('done')
         # print visibility_dict
         lst_ref = self.date_set[0]
         # print(lst_ref)
@@ -467,9 +464,9 @@ class LST_Alignment:
         lst_ref = visibility_dict[lst_ref]
         # print(lst_ref)
         # print(len(lst_ref))
-        print("Performing alignment...")
+        print('Performing alignment...')
         aligned_lsts = self.__align_visibilities(lst_ref, visibility_dict)
-        print("done")
+        print('done')
         return aligned_lsts, visibility_dict
 
 
@@ -568,19 +565,19 @@ class Julian_Parse:
         """
         Breaks up the directory of .npz files into a dictionary, keyed by date.
         """
-        print("Parsing visibility directory... ", end="")
+        print('Parsing visibility directory... ', end='')
         detected_datestamps = self.__find_unique_dates(self.filepaths)
-        print("done")
-        print("Discovering dates within specified range...", end="")
+        print('done')
+        print('Discovering dates within specified range...', end='')
         detected_datestamps = sorted(list(filter(lambda el: int(
             el) >= self.date_start and int(el) <= self.date_end, detected_datestamps)))
-        print("done")
-        print("Detected Dates: ")
+        print('done')
+        print('Detected Dates: ')
         print(detected_datestamps)
-        print("Building dictionary of dates and filepaths...", end="")
+        print('Building dictionary of dates and filepaths...', end='')
         file_dict = self.__build_visibility_dict(
             detected_datestamps, self.filepaths)
-        print("done")
+        print('done')
         self.file_dict = file_dict
         print(self.file_dict.keys())
         self.date_set = detected_datestamps
@@ -633,26 +630,26 @@ def main():
     files = []
     for file in os.listdir(args.filepath):
 
-        if file.endswith(".npz"):
+        if file.endswith('.npz'):
             files.append(file)
 
     parser = Julian_Parse(files, args.date_start, args.date_end)
     parser.break_up_datestamps()
     files, dates = parser.return_datestamps()
 
-    print("Number of days: %d" % len(dates))
+    print('Number of days: %d' % len(dates))
     # Instantiate LST_alignment class and align timestamps
-    print("Aligning LST's (use first day as reference)...")
+    print('Aligning LSTs (use first day as reference)...')
     aligner = LST_Alignment(args.filepath, dates, files)
     aligned_lsts, visibilities = aligner.align_timestamps()
     # Instantiate LST_binner class class, then bin LSTS and save to file
-    print("Bin LST's...")
+    print('Bin LSTs...')
     binner = LST_Binner(aligned_lsts, visibilities, lst_start=args.lst_start,
                         lst_end=args.lst_end, baseline_no=aligner.baseline_no, channels=args.channel_number)
     binner.bin_lsts(sigclip=args.sigma_clip)
-    print("done")
-    binner.save_binned_lsts(args.working_directory+args.output_file+".npz")
+    print('done')
+    binner.save_binned_lsts(args.working_directory+args.output_file+'.npz')
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
