@@ -1,12 +1,8 @@
-"""HERA Visibility PS Computation Script
+"""HERA Visibility PS Computation Functions
 
-This script takes aligned HERA visibilities in LAST (as outputted by
-align_lst.py) and computes various PS estimates using simple statistics over LASTs,
+Collection of functions that take aligned HERA visibilities in LAST (as outputted by
+align_lst) and compute various PS estimates using simple statistics over LASTs,
 days and baselines.
-
-To use on CSD3 must have the astroenv conda environment activated:
-$ module load miniconda3-4.5.4-gcc-5.4.0-hivczbz
-$ source activate astroenv
 
 TODO:
     - Add baseline functionality for EW, NS, 14m, 28m, individual baselines etc
@@ -17,113 +13,16 @@ TODO:
 """
 
 
-import functools
 import os
 from heapq import nsmallest
 
 import astropy.stats
-import math
-import matplotlib
 import numpy as np
-from matplotlib import pyplot as plt
 from scipy import signal
 from scipy.stats import median_absolute_deviation as mad
 from scipy.stats.mstats import gmean
 
-from idr2_info import idr2_jds
 from vis_utils import find_nearest
-
-
-#############################################################
-####### Modify the inputs in this section as required #######
-#############################################################
-
-# run statistics on either the visibilities or power spectra
-# either coherent of decoherent averaging
-stat_vis_or_ps = 'ps' # {vis, ps}
-
-# if visibility statistics: True - deal with the complex quantity
-#                         : False - or the amplitudes for the statistics
-ps_complex_analysis = True
-
-# LAST to analyze
-LAST = 3.31
-
-# statistic in time between consecutive sessions - if False, closest time bin
-# to LAST will be chosen
-last_tints = 1
-last_statistic_method = 'median'  # {median, mean}
-
-# run statistics over all IDR2 Days? if False, fill in InJDs
-statistic_all_IDR2 = False
-
-InJDs = [2458098, 2458099, 2458101, 2458102, 2458103, 2458104, 2458105, 2458106,
-         2458107, 2458108, 2458110, 2458111, 2458112, 2458113, 2458116]
-
-days_statistic = 'median'  # {median, mean}
-
-clip_rule = 'amp'  # sigma clip according to amplitudes, gmean or Re and Im parts
-# of the complex visibilities separately?
-
-sig_clip_days = True
-sig_clip_bls = True
-sig_stds = 5.0
-
-chan_start = 100
-chan_end = 250
-
-fig_path = '/rds/project/bn204/rds-bn204-asterics/mdm49/'
-savefigs = False
-
-#############################################################
-
-if statistic_all_IDR2:
-    InJDs = idr2_jds
-
-if vis_complex_analysis:
-    fig_suffix = 'complex'
-else:
-    fig_suffix = 'amplitude'
-
-if stat_vis_or_ps == 'vis':
-    stat_on_vis = True
-    stat_on_ps = False
-elif stat_vis_or_ps == 'ps':
-    stat_on_vis = False
-    stat_on_ps = True
-else:
-    raise ValueError('Choose to perform the statistics on either the \
-                      visibibilities or power spectra')
-
-
-# Loading npz file of aligned visibilities
-# Has items ['visibilities', 'baselines', 'last', 'days', 'flags']
-vis_data = np.load('/rds/project/bn204/rds-bn204-asterics/mdm49/aligned/aligned_visibilities.npz')
-visibilities = vis_data['visibilities'] # shape: (last bins, days, bls, chans)
-baselines = vis_data['baselines'] # shape: (bl, [ant1, ant2])
-last = vis_data['last'] # shape: (last bins, days)
-days = vis_data['days'].astype(int) # JD days
-flags = vis_data['flags'].astype(bool) # shape same dimensions as visibilities
-
-
-# all in MHz, for HERA H1C_IDR2
-bandwidth_start = 1.0e8
-bandwidth_end = 2.0e8
-resolution = 97656.25
-
-chans = np.arange(0, 1024, dtype=int)
-chans_range = np.arange(chan_start-1, chan_end)
-freqs = np.arange(bandwidth_start, bandwidth_end, resolution)
-freqs_range = freqs[chans_range]
-
-
-if LAST < np.min(last) or LAST > np.max(last):
-    raise ValueError('Specify LAST value in between {} and {}'.format(
-        np.ceil(np.min(vis_data['last'])*100)/100, np.floor(np.max(vis_data['last'])*100)/100))
-
-if chan_start < chans[0] or chan_end > chans[-1] or chan_start > chan_end:
-    raise ValueError('Specify channels in between {} and {} with chan_start > \
-                     chan_end'.format(chans[0], chans[-1]))
 
 
 def mod_zscore(arr):
@@ -152,56 +51,17 @@ def find_mis_days(last, jd_days, mod_z_tresh=3.5):
     :rtype: ndarray
     """
     start_last, end_last = zip(*[(last[0, i], last[-1, i]) for i in \
-                           range(last.shape[1])])
+                                 range(last.shape[1])])
     start_zscores = np.where(mod_zscore(start_last) > mod_z_tresh)[0]
     end_zscores = np.where(mod_zscore(start_last) > mod_z_tresh)[0]
     mis_days_idx = list(set(start_zscores & end_zscores))
-    mis_days = jd_days[mis_days_idx]
-    if mis_days.size:
+    mis_days = np.asarray(jd_days)[mis_days_idx]
+    if mis_days:
         print('Misaligned days: {} - check alignment'.format(mis_days))
     return mis_days
 
 
-# Removing days that do not appear in InJDs or that are misaligned
-misaligned_days = find_mis_days(last, days)
-flt_days = [day for day in list(set(InJDs) & set(days)) if day not in misaligned_days]
-flt_days_indexing = [np.where(days == flt_day)[0][0] for flt_day in flt_days]
-
-
-# Removing bad baselines
-bad_bls = [[50, 51]] # [66, 67], [67, 68], [68, 69],[82, 83], [83, 84], [122, 123]]
-bad_bls_idxs = [np.where(vis_data['baselines'] == bad_bl) for bad_bl in \
-                bad_bls if bad_bl in vis_data['baselines']]
-bad_bls_idxs = [bad_bls_idx[0][0] for bad_bls_idx in bad_bls_idxs if \
-                bad_bls_idx[0].size==2 and len(set(bad_bls_idxs[0][0]))==1]
-bl_indexing = [bl_idx for bl_idx in range(vis_data['baselines'].shape[0]) if \
-               bl_idx not in bad_bls_idxs]
-
-
-# Selecting desired LASTs
-last_idx = find_nearest(np.median(last, axis=1), LAST)[1]
-last_indexing = sorted(nsmallest(last_tints, np.arange(last.shape[0]), \
-                                 key=lambda x: np.abs(x - last_idx)))
-
-
-# Indexing out bad baselines and only selecting specified channels
-vis_indexing = np.ix_(last_indexing, flt_days_indexing, bl_indexing, chans_range)
-visibilities = visibilities[vis_indexing]
-flags = flags[vis_indexing]
-baselines = baselines[bl_indexing, :]
-last = last[last_indexing, flt_days_indexing]
-days = flt_days
-print('Zero values in visibilities array: {}'.format(0+0j in visibilities))
-
-
-return_onesided_ps = False
-# continuing analysis in either complex visibilities or visibility amplitudes
-if ps_complex_analysis:
-    visibilities = np.absolute(visibilities)
-    return_onesided_ps = True
-
-
-def sig_clip(ma_vis, clip_dim, cenfunc='median', sigma=sig_stds, clip_rule='amp'):
+def sig_clip(ma_vis, clip_dim, cenfunc='median', sigma=5.0, clip_rule='amp'):
     """Sigma clipping of visibilities over given dimension, with clipping
     done about the mean or median value for the data
 
@@ -250,7 +110,8 @@ def sig_clip(ma_vis, clip_dim, cenfunc='median', sigma=sig_stds, clip_rule='amp'
     return clipped_vis
 
 
-def clipping(ma_vis, sig_clip_days=True, sig_clip_bls=True, cenfunc='median', clip_rule='amp'):
+def clipping(ma_vis, sig_clip_days=True, sig_clip_bls=True, sig_stds=5.0, \
+             cenfunc='median', clip_rule='amp'):
     """Apply clipping
 
     :param ma_vis: Masked visibility dataset
@@ -259,6 +120,9 @@ def clipping(ma_vis, sig_clip_days=True, sig_clip_bls=True, cenfunc='median', cl
     :type sig_clip_days: bool
     :param sig_clip_bls: Whether to perform sigma clipping over baselines
     :type sig_clip_bls: bool
+    :param sigma: Number of standard deviations to use for both the lower and
+    upper clipping limit
+    :type sigma: float
     :param cenfunc: Statistic used to compute the center value for the clipping
     {'mean', 'median'}
     :type cenfunc: str
@@ -311,8 +175,8 @@ def dim_statistic(ma_vis, statistic, stat_dim):
     return vis_stat
 
 
-def power_spectrum(data1, data2=None, window='hann', length=None, \
-                   scaling='spectrum', detrend=False, return_onesided=False):
+def cps(data1, data2=None, window='hann', length=None, scaling='spectrum', \
+        detrend=False, return_onesided=False):
     # CPS
     if data2 is not None:
         if stat_on_vis:
@@ -353,140 +217,47 @@ def power_spectrum(data1, data2=None, window='hann', length=None, \
                         # Pxy_spec = np.absolute(Pxy_spec)
                         vis_ps[time, day, bl, :, :] = np.array(
                             [delay[np.argsort(delay)], Pxy_spec[np.argsort(delay)]])
-    # PS
+
+
+def ps(vis, resolution, window='hann', scaling='spectrum', length=None, \
+       detrend=False, return_onesided=False):
+    """Power spectrum computation of visibilities
+
+    Returns ndarray of delay and visibility power spectrum/power spectral density,
+    for each baseline. The dimensions of the resulting array are [2, bls, frqs],
+    where vis_ps[0, :, :] = delays and vis_ps[1, :, :] = Pxx_specs.
+
+    :param vis:
+    :type vis: ndarray
+    :param resolution: resolution of visibilities (frequency gap between
+    successive channels). This is used to calculate the sampling frequency.
+    :type resolution: float
+    :param window: FFT window
+    :type window: str
+    :param scaling: Selects between computing the power spectral density (units
+    Amp**2/Hz) and the power spectrum (units of Amp**2) {'density', 'spectrum')
+    :type scaling: str
+    :param length: Length of the FFT used. If None the length of the vis freq
+    axis will be used.
+    :type length: int, None
+    :param detrend: Specifies how to detrend each segment
+    :type detrend: str, False
+    :param return_onesided: Whether to return a one-sided spectrum. For complex
+    data, a two-sided spectrum is always returned.
+    :type return_onesided: bool
+
+    :return: Delay and visibility power spectra
+    :rtype: ndarray
+    """
+    # Finding dimensions of returned power spectral computation
+    if return_onesided:
+        pspec_dim = int(np.ceil(vis.shape[1]/2))
     else:
-        if stat_on_vis:
-            # Finding dimension of returned delays
-            delay_test, Pxx_spec_test = signal.periodogram(
-                data1[1, :], fs=1./resolution, window=window, scaling=scaling, \
-                    nfft=length, detrend=detrend)
-            # how many data points the signal.periodogram calculates
-            delayshape = delay_test.shape[0]
-            # dimensions are [baselines, (delay, Pxx_spec), delayshape]
-            vis_ps = np.zeros((data1.shape[0], 2, delayshape), dtype=complex)
-            for i in range(data1.shape[0]):  # Iterating over all baselines
-                delay, Pxx_spec = signal.periodogram(
-                    data1[i, :], fs=1./resolution, window=window, scaling=scaling, \
-                        nfft=length, detrend=detrend)
-                vis_ps[i, :, :] = [delay, Pxx_spec]
-                # equivalent to:
-                # vis_ps[i,0,:] = delay
-                # vis_ps[i,1,:] = Pxx_spec
+        pspec_dim = vis.shape[1]
+    vis_ps = np.empty((2, vis.shape[0], pspec_dim))
+    for bl in range(vis.shape[0]): # Iterating over baselines
+        vis_ps_bl = signal.periodogram(vis[bl, :], fs=1./resolution, \
+            window=window, scaling=scaling, nfft=length, detrend=detrend, \
+            return_onesided=return_onesided)
+        vis_ps[:, bl, :] = vis_ps_bl
     return vis_ps
-
-
-vis_amps_clipped = clipping(
-    data=vis_analysis, cenfunc='median', clip_rule=clip_rule)
-
-# after clipping
-plot_stat_vis(np.ma.masked_array(np.absolute(vis_amps_clipped.data),
-              vis_amps_clipped.mask), 'mean', 'median', clipped=True, last_avg=False)
-
-# statistics on visibilities before PS computation
-day_halves = np.array_split(days_dayflg, 2)
-if stat_on_vis:
-    if last_statistic:
-        vis_amps_clipped_lastavg = getattr(np.ma, last_statistic_method)\
-                                   (vis_amps_clipped, axis=0)
-        # after LAST averaging
-        plot_stat_vis(np.absolute(vis_amps_clipped_lastavg),
-                      last_statistic_method, clipped=True, last_avg=True)
-
-        # splitting array of days into 2 (for cross power spectrum between
-        # mean/median of two halves) split visibilities array into two sub-arrays
-        # of (near) equal days
-        vis_halves = np.array_split(vis_amps_clipped_lastavg, 2, axis=0)
-
-        vis_half1_preflag = day_statistic(vis_halves[0])
-        vis_half2_preflag = day_statistic(vis_halves[1])
-        vis_whole_preflag = day_statistic(vis_amps_clipped_lastavg)
-
-        # find out where data is flagged from clipping - if statistic applied on
-        # days, still get gaps in the visibilities
-        # list(set(np.where(day_statistic(vis_halves[1]).mask == True)[0]))
-        # finds flagged baselines
-        baselines_clip_faulty = list(
-            set(np.where(day_statistic(vis_amps_clipped_lastavg).mask == True)[0]))
-        baselines_clip_flag = np.delete(
-            np.arange(len(baselines_dayflg_blflg)), baselines_clip_faulty)
-        print('Baseline(s) {} removed from analysis due to flagging from sigma \
-        clipping - there are gaps in visibilities for these baselines for the \
-        channel range {} - {}'.format(baselines_dayflg_blflg[baselines_clip_faulty], \
-        chan_start, chan_end))
-
-        vis_half1 = vis_half1_preflag[baselines_clip_flag, :]
-        vis_half2 = vis_half2_preflag[baselines_clip_flag, :]
-        vis_amps_final = vis_whole_preflag[baselines_clip_flag, :]
-        baselines_dayflg_blflg_clipflg = baselines_dayflg_blflg[baselines_clip_flag]
-
-        # window functions: boxcar (equivalent to no window at all), triang,
-        # blackman, hamming, hann, bartlett, flattop, parzen, bohman,
-        # blackmanharris, nuttall, barthann, kaiser
-        vis_ps_final = power_spectrum(vis_half1, vis_half2, window='boxcar', \
-        length=vis_half1.shape[1], scaling='spectrum', detrend=False, \
-        return_onesided=return_onesided_ps)
-        # vis_psd_final = power_spectrum(vis_half1, vis_half2, window='boxcar', \
-        # length=vis_half1.shape[1], scaling='density', detrend=False,
-        # return_onesided=False)
-
-
-else:
-    vis_amps_clipped_lastavg = getattr(np.ma, last_statistic_method)\
-                               (vis_amps_clipped, axis=0)
-    vis_whole_preflag = day_statistic(vis_amps_clipped_lastavg)
-    baselines_clip_faulty = list(
-        set(np.where(day_statistic(vis_amps_clipped_lastavg).mask == True)[0]))
-    baselines_clip_flag = np.delete(
-        np.arange(len(baselines_dayflg_blflg)), baselines_clip_faulty)
-    baselines_dayflg_blflg_clipflg = baselines_dayflg_blflg[baselines_clip_flag]
-    print('Baseline(s) {} removed from analysis due to flagging from sigma \
-    clipping - there are gaps in visibilities for these baselines for the \
-    channel range {} - {}'.format(baselines_dayflg_blflg[baselines_clip_faulty], \
-    chan_start, chan_end))
-    vis_amps_final = vis_whole_preflag[baselines_clip_flag, :]
-
-    vis_amps_clipped_blflag = vis_amps_clipped[:, :, baselines_clip_flag, :]
-    for time in range(vis_amps_clipped_blflag.shape[0]):
-        for day in range(vis_amps_clipped_blflag.shape[1]):
-            for bl in range(vis_amps_clipped_blflag.shape[2]):
-                if all(vis_amps_clipped_blflag[time, day, bl, :].mask == True):
-                    print(str(time) + ' ' + str(day) + ' ' + str(bl))
-                    print('-------')
-    # use these to mask the power spectra before averaging
-    # also create a mask for visibilities where more tha 50% of data is flagged - how to?
-    # then for others need to interpolate where mask == True
-
-    list(set(np.where(vis_amps_clipped_blflag[].mask == True)[0]))
-
-    ###############
-    # here must verify that there are no gaps in visibilities
-    ###############
-    # checking where the masks are in the visibility hypercube
-    # list(set(np.where(vis_amps_clipped_blflag.mask == True)[0]))
-    # list(set(np.where(vis_amps_clipped_blflag.mask == True)[1]))
-    # list(set(np.where(vis_amps_clipped_blflag.mask == True)[2]))
-    # list(set(np.where(vis_amps_clipped_blflag.mask == True)[3]))
-
-    # split visibilities array into two sub-arrays of (near) equal days
-    vis_halves = np.array_split(vis_amps_clipped_blflag, 2, axis=1)
-    # not running day statistics on visibilities
-    # not removing any baselines at this point - unless some have gaps in the
-    # visibilities across the chan_range would then have to apply Mark's psd_estimation
-    vis_ps_raw = power_spectrum(vis_halves[0], vis_halves[1], window='boxcar', \
-        length=vis_halves[0].shape[-1], scaling='spectrum', detrend=False, \
-        return_onesided=return_onesided_ps)  # spectrum
-    # now run statistics - run this on complex ps or on magnitude?
-    if ps_complex_analysis:
-        vis_ps_raw_analysis = vis_ps_raw
-    else:
-        vis_ps_raw_analysis = np.absolute(vis_ps_raw)
-    # statistic on last bins
-    vis_ps_raw_lastavg = getattr(np.ma, last_statistic_method)\
-                         (vis_ps_raw_analysis, axis=0)
-    vis_ps_final = day_statistic(vis_ps_raw_lastavg)
-    # need to check data is smooth - no gaps
-
-
-# Choosing single day
-# if len(InJDs) == 1:
-#     vis_amps_single_day = vis_amps_clipped_lastavg[np.where(days_dayflg == IDRDay)[0][0] ,:,:]
