@@ -1,4 +1,12 @@
-"""Main power spectrum analysis script"""
+"""Main power spectrum analysis script
+
+TODO:
+    - Add baseline functionality for EW, NS, 14m, 28m, individual baselines etc
+      (although this done before export to npz..?)
+    - Functionality to deal with statistics on either amplitudes, or complex quantities
+      (also real and imag separately)
+    - Load npz file of single visibility dataset
+"""
 
 
 import numpy as np

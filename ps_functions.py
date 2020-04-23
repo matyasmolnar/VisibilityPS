@@ -3,13 +3,6 @@
 Collection of functions that take aligned HERA visibilities in LAST (as outputted by
 align_lst) and compute various PS estimates using simple statistics over LASTs,
 days and baselines.
-
-TODO:
-    - Add baseline functionality for EW, NS, 14m, 28m, individual baselines etc
-      (although this done before export to npz..?)
-    - Functionality to deal with statistics on either amplitudes, or complex quantities
-      (also real and imag separately)
-    - Load npz file of single visibility dataset
 """
 
 
@@ -175,48 +168,69 @@ def dim_statistic(ma_vis, statistic, stat_dim):
     return vis_stat
 
 
-def cps(data1, data2=None, window='hann', length=None, scaling='spectrum', \
+def get_ps_dim(vis, return_onesided):
+    """Returns an empty array with the required dimensions to fit the results
+    of the power spectra, when iterated over baselines
+
+    :param vis: Visibility dataset
+    :type vis: ndarray
+    :param return_onesided: Whether to return a one-sided spectrum. For complex
+    data, a two-sided spectrum is always returned.
+    :type return_onesided: bool
+
+    :return: Empty array with the required shape to fill in the results from the
+    power spectra computations
+    :rtype: ndarray
+    """
+    if return_onesided and not np.iscomplexobj(vis):
+        pspec_dim = int(np.ceil(vis.shape[1]/2))
+    else:
+        pspec_dim = vis.shape[1]
+    vis_ps = np.empty((2, vis.shape[0], pspec_dim))
+    return vis_ps
+
+
+def cps(vis1, vis2, resolution, window='hann', length=None, scaling='spectrum', \
         detrend=False, return_onesided=False):
-    # CPS
-    if data2 is not None:
-        if stat_on_vis:
-            # Finding dimension of returned delays
-            delay_test, Pxy_spec_test = signal.csd(data1[0, :], data2[0, :], \
-                fs=1./resolution, window=window, scaling=scaling, nperseg=length, \
-                detrend=detrend, return_onesided=return_onesided)
-            # how many data points the signal.periodogram calculates
-            delayshape = delay_test.shape[0]
-            # dimensions are [baselines, (delay, Pxx_spec), delayshape]
-            vis_ps = np.zeros((data1.shape[0], 2, delayshape), dtype=complex)
-            for i in range(0, data1.shape[0]):  # Iterating over all baselines
-                delay, Pxy_spec = signal.csd(data1[i, :], data2[i, :], \
-                    fs=1./resolution, window=window, scaling=scaling, \
-                    nperseg=length, detrend=detrend, return_onesided=return_onesided)
-                # Pxy_spec = np.absolute(Pxy_spec)
-                vis_ps[i, :, :] = np.array(
-                    [delay[np.argsort(delay)], Pxy_spec[np.argsort(delay)]])
-        else:
-            # statistics will be done later in the power spectrum domain
-            delay_test, Pxy_spec_test = signal.csd(data1[0, 0, 0, :], \
-                data2[0, 0, 0, :], fs=1./resolution, window=window, \
-                scaling=scaling, nperseg=length, detrend=detrend, \
-                return_onesided=return_onesided)
-            # how many data points the signal.periodogram calculates
-            delayshape = delay_test.shape[0]
-            # dimensions are [baselines, (delay, Pxx_spec), delayshape]
-            vis_ps = np.zeros((data1.shape[0], np.minimum(
-                data1.shape[1], data2.shape[1]), data1.shape[2], 2, delayshape), \
-                    dtype=complex)
-            for time in range(vis_ps.shape[0]):  # Iterating over all last bins
-                for day in range(vis_ps.shape[1]):
-                    for bl in range(vis_ps.shape[2]):
-                        delay, Pxy_spec = signal.csd(data1[time, day, bl, :], \
-                            data2[time, day, bl, :], fs=1./resolution, window=window, \
-                            scaling=scaling, nperseg=length, detrend=detrend, \
-                            return_onesided=return_onesided)
-                        # Pxy_spec = np.absolute(Pxy_spec)
-                        vis_ps[time, day, bl, :, :] = np.array(
-                            [delay[np.argsort(delay)], Pxy_spec[np.argsort(delay)]])
+    """Cross power spectrum computation of visibilities
+
+    Returns ndarray of delay and visibility cross power spectrum/power spectral
+    density, for each baseline. The dimensions of the resulting array are [2, bls, frqs],
+    where vis_ps[0, :, :] = delays and vis_ps[1, :, :] = Pxy_specs.
+
+    :param vis1: Visibility dataset 1
+    :type vis1: ndarray
+    :param vis2: Visibility dataset 2
+    :type vis2: ndarray
+    :param resolution: resolution of visibilities (frequency gap between
+    successive channels). This is used to calculate the sampling frequency.
+    :type resolution: float
+    :param window: FFT window
+    :type window: str
+    :param scaling: Selects between computing the power spectral density (units
+    Amp**2/Hz) and the power spectrum (units of Amp**2) {'density', 'spectrum')
+    :type scaling: str
+    :param length: Length of the FFT used. If None the length of the vis freq
+    axis will be used.
+    :type length: int, None
+    :param detrend: Specifies how to detrend each segment
+    :type detrend: str, False
+    :param return_onesided: Whether to return a one-sided spectrum. For complex
+    data, a two-sided spectrum is always returned.
+    :type return_onesided: bool
+
+    :return: Delay and visibility power spectra
+    :rtype: ndarray
+    """
+    assert vis1.size == vis2.size
+    vis_cps = get_ps_dim(vis1, return_onesided).astype(complex)
+    for bl in range(vis1.shape[0]): # Iterating over baselines
+        delay, Pxy_spec = signal.csd(vis1[bl, :], vis2[bl, :], fs=1./resolution, \
+            window=window, scaling=scaling, nperseg=length, detrend=detrend, \
+            return_onesided=return_onesided)
+        delay_sort = np.argsort(delay)
+        vis_cps[:, bl, :] = [delay[delay_sort], Pxy_spec[delay_sort]]
+    return vis_cps
 
 
 def ps(vis, resolution, window='hann', scaling='spectrum', length=None, \
@@ -227,7 +241,7 @@ def ps(vis, resolution, window='hann', scaling='spectrum', length=None, \
     for each baseline. The dimensions of the resulting array are [2, bls, frqs],
     where vis_ps[0, :, :] = delays and vis_ps[1, :, :] = Pxx_specs.
 
-    :param vis:
+    :param vis: Visibility dataset
     :type vis: ndarray
     :param resolution: resolution of visibilities (frequency gap between
     successive channels). This is used to calculate the sampling frequency.
@@ -249,15 +263,11 @@ def ps(vis, resolution, window='hann', scaling='spectrum', length=None, \
     :return: Delay and visibility power spectra
     :rtype: ndarray
     """
-    # Finding dimensions of returned power spectral computation
-    if return_onesided:
-        pspec_dim = int(np.ceil(vis.shape[1]/2))
-    else:
-        pspec_dim = vis.shape[1]
-    vis_ps = np.empty((2, vis.shape[0], pspec_dim))
+    vis_ps = get_ps_dim(vis, return_onesided)
     for bl in range(vis.shape[0]): # Iterating over baselines
-        vis_ps_bl = signal.periodogram(vis[bl, :], fs=1./resolution, \
+        delay, Pxx_spec = signal.periodogram(vis[bl, :], fs=1./resolution, \
             window=window, scaling=scaling, nfft=length, detrend=detrend, \
             return_onesided=return_onesided)
-        vis_ps[:, bl, :] = vis_ps_bl
+        delay_sort = np.argsort(delay)
+        vis_ps[:, bl, :] = [delay[delay_sort], Pxx_spec[delay_sort]]
     return vis_ps
