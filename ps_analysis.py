@@ -1,6 +1,9 @@
 """Main power spectrum analysis script"""
 
 
+import numpy as np
+
+
 from ps_functions import plot_stat_vis, plot_single_bl_vis, baseline_vis_analysis, \
 baseline_ps_analysis
 
@@ -18,3 +21,7 @@ def main():
     mask=vis_amps_final.mask, dtype=float))
 
     baseline_ps_analysis(vis_ps_final)
+
+
+if __name__ == "__main__":
+    main()

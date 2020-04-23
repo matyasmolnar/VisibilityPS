@@ -62,8 +62,8 @@ InJDs = [2458098, 2458099, 2458101, 2458102, 2458103, 2458104, 2458105, 2458106,
 
 days_statistic = 'median'  # {median, mean}
 
-amp_clip = True  # sigma clip according to amplitudes? if vis_complex_analysis,
-# will still mask according to behaviour of amplitudes
+clip_rule = 'amp'  # sigma clip according to amplitudes, gmean or Re and Im parts
+# of the complex visibilities separately?
 
 sig_clip_days = True
 sig_clip_bls = True
@@ -117,39 +117,53 @@ freqs = np.arange(bandwidth_start, bandwidth_end, resolution)
 freqs_range = freqs[chans_range]
 
 
-if LAST < np.min(last) or LAST > np.trunc(np.max(last)*100)/100:
-    raise ValueError('Specify LAST value in between {} and {}'.format(round(np.min(last), 2), \
-                     np.trunc(np.max(last)*100)/100)))
+if LAST < np.min(last) or LAST > np.max(last):
+    raise ValueError('Specify LAST value in between {} and {}'.format(
+        np.ceil(np.min(vis_data['last'])*100)/100, np.floor(np.max(vis_data['last'])*100)/100))
 
 if chan_start < chans[0] or chan_end > chans[-1] or chan_start > chan_end:
     raise ValueError('Specify channels in between {} and {} with chan_start > \
                      chan_end'.format(chans[0], chans[-1]))
 
 
-# Checking alignment of LASTs. Issue with missing consecutive sessions. Need to
-# check calibration and/or alignment script
 def mod_zscore(arr):
-    """Modified z-score, as defined by Iglewicz and Hoaglin"""
-    return 0.6745*(arr - np.median(arr))/mad(arr)
+    """Modified z-score, as defined by Iglewicz and Hoaglin
+
+    :param arr: Array
+    :type arr: array-like
+
+    :return: Modified z-scores of the elements of the input array
+    :type: ndaray
+    """
+    return 0.6745*(np.asarray(arr) - np.median(arr))/mad(arr)
 
 
-def find_mis_days(last, mod_z_tresh=3.5):
+def find_mis_days(last, jd_days, mod_z_tresh=3.5):
     """Find misaligned days by computing the modified z-scores of the first and
     last LAST timestamps, and discarding any days that have a modified z-score
-    that exceeds the treshold"""
+    that exceeds the treshold.
+
+    :param last: LAST
+    :type last: float
+    :param mod_z_tresh: Threshold of modified z-score to discard a day of data
+    :type mod_z_thresh: float
+
+    :return: Misaligned days
+    :rtype: ndarray
+    """
     start_last, end_last = zip(*[(last[0, i], last[-1, i]) for i in \
                            range(last.shape[1])])
     start_zscores = np.where(mod_zscore(start_last) > mod_z_tresh)[0]
     end_zscores = np.where(mod_zscore(start_last) > mod_z_tresh)[0]
     mis_days_idx = list(set(start_zscores & end_zscores))
-    mis_days = days[mis_days_idx]
+    mis_days = jd_days[mis_days_idx]
     if mis_days.size:
         print('Misaligned days: {} - check alignment'.format(mis_days))
     return mis_days
 
 
 # Removing days that do not appear in InJDs or that are misaligned
-misaligned_days = find_mis_days(last)
+misaligned_days = find_mis_days(last, days)
 flt_days = [day for day in list(set(InJDs) & set(days)) if day not in misaligned_days]
 flt_days_indexing = [np.where(days == flt_day)[0][0] for flt_day in flt_days]
 
@@ -187,7 +201,7 @@ if ps_complex_analysis:
     return_onesided_ps = True
 
 
-def sig_clip(ma_vis, clip_dim='bls', cenfunc='median', sigma=sig_stds, clip_rule='amp'):
+def sig_clip(ma_vis, clip_dim, cenfunc='median', sigma=sig_stds, clip_rule='amp'):
     """Sigma clipping of visibilities over given dimension, with clipping
     done about the mean or median value for the data
 
@@ -195,6 +209,23 @@ def sig_clip(ma_vis, clip_dim='bls', cenfunc='median', sigma=sig_stds, clip_rule
         - Their absolute values
         - Their geometric means
         - Their Re and Im values separately
+
+    :param ma_vis: Masked visibility dataset
+    :type ma_vis: MaskedArray
+    :param clip_dim: Dimension to sigma clip {'bls', 'days'}
+    :type clip_dim: str
+    :param cenfunc: Statistic used to compute the center value for the clipping
+    {'mean', 'median'}
+    :type cenfunc: str
+    :param sigma: Number of standard deviations to use for both the lower and
+    upper clipping limit
+    :type sigma: float
+    :param clip_rule: Rule for sigma clipping: on what aspect of the complex data
+    should the sigma clipping be applied {'amp', 'gmean', None}
+    :type clip_rule: str, None
+
+    :return: Sigma clipped Masked visibility dataset
+    :rtype: MaskedArray
     """
     clip_dim_dict = {'days': [2, 1], 'bls': [1, 2]}
     clip_rule_dict = {'amp': np.absolute, 'gmean': gmean}
@@ -219,18 +250,35 @@ def sig_clip(ma_vis, clip_dim='bls', cenfunc='median', sigma=sig_stds, clip_rule
     return clipped_vis
 
 
-def clipping(ma_vis, cenfunc='median', amp_clip=amp_clip):
-    """Apply clipping"""
+def clipping(ma_vis, sig_clip_days=True, sig_clip_bls=True, cenfunc='median', clip_rule='amp'):
+    """Apply clipping
+
+    :param ma_vis: Masked visibility dataset
+    :type ma_vis: MaskedArrays
+    :param sig_clip_days: Whether to perform sigma clipping over days
+    :type sig_clip_days: bool
+    :param sig_clip_bls: Whether to perform sigma clipping over baselines
+    :type sig_clip_bls: bool
+    :param cenfunc: Statistic used to compute the center value for the clipping
+    {'mean', 'median'}
+    :type cenfunc: str
+    :param clip_rule: Rule for sigma clipping: on what aspect of the complex data
+    should the sigma clipping be applied {'amp', 'gmean', None}
+    :type clip_rule: str, None
+
+    :return: Sigma clipped Masked visibility dataset
+    :rtype: MaskedArray
+    """
     no_day_clip = 0
     if sig_clip_days:
         visibilities = sig_clip(ma_vis, clip_dim='days', cenfunc=cenfunc, \
-                                sigma=sig_stds, amp_clip=amp_clip)
+                                sigma=sig_stds, clip_rule=clip_rule)
         no_day_clip = np.sum(ma_vis.mask)
         print('Day clipping: {} visibilities masked'.format(no_day_clip))
 
     if sig_clip_bls:
         visibilities = sig_clip(ma_vis, clip_dim='bls', cenfunc=cenfunc, \
-                                sigma=sig_stds, amp_clip=amp_clip)
+                                sigma=sig_stds, clip_rule=clip_rule)
         no_bl_clip = np.sum(ma_vis.mask) - no_day_clip
         print('Baseline clipping has been applied: {} visibilities masked'.\
               format(no_bl_clip))
@@ -240,20 +288,22 @@ def clipping(ma_vis, cenfunc='median', amp_clip=amp_clip):
               ma_vis.size))
     else:
         print('No clipping applied')
-    return data
+    return ma_vis
 
 
 def dim_statistic(ma_vis, statistic, stat_dim):
     """Statistic over dimension
 
-    :param ma_vis: Masked array of visibilities
-    :type ma_vis: numpy MaskedArray
+    :param ma_vis: Masked visibility dataset
+    :type ma_vis: MaskedArray
+    :param statistic: Statistic used on the dataset {'mean', 'median'}
+    :type statistic: str
     :param stat_dim: Dimension on which to apply statistic. Can either be int,
     which represents axis, or str which represents the meaning of the dimension
     :type stat_dim: int, str
 
-    :return: Statistic of visibilities over the specified dimension
-    :rtype: numpy MaskedArray
+    :return: Statistic of masked visibibilities over the specified dimension
+    :rtype: MaskedArray
     """
     if not isinstance(stat_dim, int):
         stat_dim = dim_dict[stat_dim]
@@ -326,7 +376,7 @@ def power_spectrum(data1, data2=None, window='hann', length=None, \
 
 
 vis_amps_clipped = clipping(
-    data=vis_analysis, cenfunc='median', amp_clip=amp_clip)
+    data=vis_analysis, cenfunc='median', clip_rule=clip_rule)
 
 # after clipping
 plot_stat_vis(np.ma.masked_array(np.absolute(vis_amps_clipped.data),
