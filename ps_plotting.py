@@ -1,59 +1,92 @@
 """Plotting functions for power spectra"""
 
 
+import functools
+
 import numpy as np
 from matplotlib import pyplot as plt
 
 
-# Compare plots before after clipping and last averaging
-def plot_stat_vis(data, statistics, last_avg=False, fig_name=None):
+vis_type_dict = {'amp':'abs', 'phase':'angle'}
+
+
+def plot_stat_vis(ma_vis, chans, statistics, vis_type='amp', savefig=False, \
+                  fig_name='vis_amp_stats.pdf'):
+    """Plot averaged visibilities
+
+    Visibilities are averaged (by mean or median statistics) over redundant
+    baselines, days, and LASTs, and then plotted.
+
+    :param ma_vis: Masked visibility dataset
+    :type ma_vis: MaskedArray
+    :param chans: Frequency channels
+    :type chans: ndarray
+    :param statistics: Statistic to peform over bls, days and lsts {'mean', 'median'}
+    :type statistics: str, list
+    :param vis_type: Plot amplitude or phase {'amp', 'phase'}
+    :type vis_type: str
+    :param savefig: Whether to save the figure
+    :type savefig: bool
+    :param fig_name: Figure name
+    :type fig_name: str
+    """
     plt.figure(figsize=(10, 7))
-    stat_fn = np.ma
+    ma_vis =  getattr(np.ma, vis_type_dict[vis_type])(ma_vis)
+    print(ma_vis.dtype)
     if isinstance(statistics, str):
         statistics = [statistics]
     for statistic in statistics:
-        if not last_avg:
-            plt.plot(chans_range+1, getattr(stat_fn, statistic)(getattr(stat_fn, statistic)
-            (getattr(stat_fn, statistic)(np.squeeze(data), axis=0), axis=0), axis=0), \
-            label=statistic)
-        elif last_avg:
-            plt.plot(chans_range+1, getattr(stat_fn, statistic)(getattr(stat_fn, statistic)
-            (np.squeeze(data), axis=0), axis=0), label=statistic)
+        stat = getattr(np.ma, statistic)
+        # can't do stat(ma_vis, axis=(0, 1, 2)) because median of median != whole median
+        stat_vis = stat(stat(stat(ma_vis, axis=0), axis=0), axis=0)
+        plt.plot(chans+1, stat_vis, label=statistic)
     plt.xlabel('Channel')
-    plt.ylabel('Visibility Amplitude')
+    plt.ylabel('Visibility {}'.format(vis_type))
     plt.legend(loc='upper right')
-    if last_avg:
-        last_title = ' and LAST averaging'
-    else:
-        last_title = ''
-    plt.title('Statistic of visibility amplitudes over baselines and days'.\
-              format(last_title))
-    if savefigs:
+    plt.title('Statistic of visibility amplitudes over baselines, days and LASTs')
+    if savefig:
         plt.savefig(fig_name, format='pdf', dpi=300)
     plt.ion()
     plt.show()
 
 
-def plot_single_bl_vis(data, time, JD, bl):
-    """Plot visibility amplitudes for single baseline"""
-    plt.figure(figsize=(10, 7))
-    plt.plot(chans_range+1, data[find_nearest(last_dayflg[:, 0], time)[1],
-             np.ndarray.tolist(days_dayflg).index(day), \
-             np.ndarray.tolist(baselines_dayflg_blflg).index(bl), :])
-    plt.xlabel('Channel')
-    plt.ylabel('Visibility amplitude')
-    plt.title('Amplitudes from baselines {} at JD {} at LAST {}'.format(bl, JD_day, time))
-    plt.ion()
-    plt.show()
+def plot_sample_vis(ma_vis, chans, vis_type='amp', tint_idx=0, day_idx=0, bl_idx=0):
+    """Plot sample visibility
+
+    :param ma_vis: Masked visibility dataset
+    :type ma_vis: MaskedArray
+    :param chans: Frequency channels
+    :type chans: ndarray
+    :param vis_type: Plot amplitude or phase {'amp', 'phase'}
+    :type vis_type: str
+    :param tint_idx: Index of time integration of visibility dataset to sample
+    :type tint_idx: int
+    :param day_idx: Index of Julian day of visibility dataset to sample
+    :type day_idx: int
+    :param bl_idx:Index of baseline of visibility dataset to sample
+    :type bl_idx: int
+    """
+    sample_vis = ma_vis[tint_idx, day_idx, bl_idx, :]
+    if sample_vis.mask.all():
+        print('All visibilities for the specified indices are flagged')
+    else:
+        ma_vis = getattr(np.ma, vis_type_dict[vis_type])(ma_vis[tint_idx, day_idx, \
+                                                                 bl_idx, :])
+        plt.figure(figsize=(10, 7))
+        plt.plot(chans+1, ma_vis)
+        plt.xlabel('Channel')
+        plt.ylabel('Visibility {}'.format(vis_type))
+        plt.ion()
+        plt.show()
 
 
-def plot_stat_ps(data, figname, statistics, scaling='spectrum'):
+def plot_stat_ps(ps_data, statistics, scaling='spectrum', figname=None):
     """Plotting the mean and/or median power spectra"""
     plt.figure()
     if isinstance(statistics, str):
         statistics = [statistics]
     for statistic in statistics:
-        stat = getattr(np, statistic)(data, axis=0)
+        stat = getattr(np, statistic)(ps_data, axis=0)
         plt.semilogy(np.real(stat[0]*1e6), np.abs(stat[1]), label=statistic)
         if scaling == 'density':
             plt.ylabel('Cross power spectral density [Amp**2/s]')
@@ -64,21 +97,38 @@ def plot_stat_ps(data, figname, statistics, scaling='spectrum'):
         plt.legend(loc='upper right')
         plt.xlabel('Geometric delay [$\mu$s]')
         plt.title('Cross power spectrum over E-W baselines')
-    if savefigs:
-        plt.savefig(figname, format='pdf', dpi=300)
+    if figname is not None:
+        if savefigs:
+            plt.savefig(figname, format='pdf', dpi=300)
     plt.ion()
     plt.show()
 
 
-def factors(n):
-    facs = np.asarray(sorted(functools.reduce(list.__add__, ([i, n//i] for i in \
-                   range(1, int(np.sqrt(n)) + 1) if n % i == 0))))
+def factors(int_num):
+    """Finds the factors of a given integer
+
+    :param n: Number to factorize
+    :type n: int
+
+    :return: Array of all possible factors
+    :rtype: ndarray
+    """
+    facs = np.asarray(sorted(functools.reduce(list.__add__, ([i, int_num//i] \
+        for i in range(1, int(np.sqrt(int_num)) + 1) if int_num % i == 0))))
     return facs
 
 
-def plot_size(x):
-    no_rows = int(find_nearest(factors(x), x/2.)[0])
-    no_cols = int(x / no_rows)
+def plot_size(no_plots):
+    """Returns subplot dimensions for a given number of subplots
+
+    :param no_plots: Number of subplots required
+    :type no_plots: int
+
+    :return: Subplot nrows and ncols dimensions
+    :rtype: tuple
+    """
+    no_rows = int(find_nearest(factors(no_plots), no_plots/2.)[0])
+    no_cols = int(no_plots / no_rows)
     return no_rows, no_cols
 
 
@@ -112,8 +162,7 @@ def baseline_vis_analysis(data, fig_path, fig_name='vis_bl_analysis', \
     plt.show()
 
 
-def baseline_ps_analysis(ps, fig_path, fig_name, fig_name='ps_bl_analysis', \
-                         save_fig=False):
+def baseline_ps_analysis(ps, fig_path, fig_name='ps_bl_analysis', save_fig=False):
     """Per baseline power spectrum analysis"""
     # should be plot_size(data[***]) - need to find out which dimension
     no_rows = plot_size()[0]
