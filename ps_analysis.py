@@ -172,10 +172,6 @@ def main():
     vic_cps = cps(vis_half1, vis_half2, window='blackmanharris', length=None, \
         scaling='spectrum', detrend=False, return_onesided=return_onesided_ps)
 
-    # baseline_vis_analysis(np.ma.masked_array(np.absolute(vis_amps_final.data), \
-    # mask=vis_amps_final.mask, dtype=float))
-    # baseline_ps_analysis(vis_ps_final)
-
 
 if __name__ == "__main__":
     main()

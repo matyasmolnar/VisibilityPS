@@ -6,8 +6,27 @@ import functools
 import numpy as np
 from matplotlib import pyplot as plt
 
+from vis_utils import find_nearest
+
 
 vis_type_dict = {'amp':'abs', 'phase':'angle'}
+
+
+def figname_format(figname, format='pdf'):
+    """Format figure name to have correct file extension
+
+    :param figname: Figure name
+    :type figname: str
+    :param format: Format to save the figure
+    :type format: str
+
+    :return: Formatted figure name
+    :rtype: str
+    """
+    ext = '.{}'.format(format)
+    if not fig_name.endswith(ext):
+        fig_name = fig_name + ext
+    return fig_name
 
 
 def plot_stat_vis(ma_vis, chans, statistics, vis_type='amp', savefig=False, \
@@ -40,14 +59,13 @@ def plot_stat_vis(ma_vis, chans, statistics, vis_type='amp', savefig=False, \
         stat_vis = ma_vis.copy()
         for stat_dim in range(ma_vis.ndim - 1):
             stat_vis = stat(stat_vis, axis=0)
-        # stat_vis = stat(stat(stat(ma_vis, axis=0), axis=0), axis=0)
         plt.plot(chans+1, stat_vis, label=statistic)
     plt.xlabel('Channel')
     plt.ylabel('Visibility {}'.format(vis_type))
     plt.legend(loc='upper right')
     plt.title('Statistic of visibility amplitudes over baselines, days and LASTs')
     if savefig:
-        plt.savefig(fig_name, format='pdf', dpi=300)
+        plt.savefig(figname_format(fig_name), format='pdf', dpi=300)
     plt.ion()
     plt.show()
 
@@ -84,7 +102,7 @@ def plot_sample_vis(ma_vis, chans, vis_type='amp', tint_idx=0, day_idx=0, \
         plt.xlabel('Channel')
         plt.ylabel('Visibility {}'.format(vis_type))
         if savefig:
-            plt.savefig(fig_name, format='pdf', dpi=300)
+            plt.savefig(figname_format(fig_name), format='pdf', dpi=300)
         plt.ion()
         plt.show()
 
@@ -104,7 +122,7 @@ def plot_stat_ps(ps_data, statistics, scaling='spectrum', savefig=False, \
     :param fig_name: Figure name
     :type fig_name: str
     """
-    plt.figure(figsize=(12, 8))
+    plt.figure(figsize=(10, 7))
     if isinstance(statistics, str):
         statistics = [statistics]
     for statistic in statistics:
@@ -118,103 +136,116 @@ def plot_stat_ps(ps_data, statistics, scaling='spectrum', savefig=False, \
     plt.legend(loc='upper right')
     plt.title('Cross power spectrum over E-W baselines')
     if savefig:
-        plt.savefig(figname, format='pdf', dpi=300)
+        plt.savefig(figname_format(fig_name), format='pdf', dpi=300)
     plt.ion()
     plt.show()
 
 
-def factors(int_num):
-    """Finds the factors of a given integer
+def round_to(x, base):
+    """Round number to nearest base
 
-    :param n: Number to factorize
-    :type n: int
+    :param x: Number to round
+    :type x: float, int
+    :param base: Base
+    :type bas: int
 
-    :return: Array of all possible factors
-    :rtype: ndarray
+    :return: Rounded number
+    :rtype: int
     """
-    facs = np.asarray(sorted(functools.reduce(list.__add__, ([i, int_num//i] \
-        for i in range(1, int(np.sqrt(int_num)) + 1) if int_num % i == 0))))
-    return facs
+    return base * round(x/base)
 
 
-def plot_size(no_plots):
-    """Returns subplot dimensions for a given number of subplots
+def per_bl_vis_plot(ma_vis, chans, bls, vis_type='amp', no_cols=5, figsize=(14, 10), \
+                    savefig=False, fig_name='vis_per_bl.pdf'):
+    """Per baseline visibility analysis
 
-    :param no_plots: Number of subplots required
-    :type no_plots: int
-
-    :return: Subplot nrows and ncols dimensions
-    :rtype: tuple
+    :param ma_vis: Masked visibility dataset
+    :type ma_vis: MaskedArray
+    :param chans: Frequency channels
+    :type chans: ndarray
+    :param bls: Baselines
+    :type bls: ndarray
+    :param vis_type: Plot amplitude or phase {'amp', 'phase'}
+    :type vis_type: str
+    :param no_cols: Number of columns to plot
+    :type no_cols: int
+    :param figsize: Size of figure in inches (w, h)
+    :type figsize: tuple
+    :param savefig: Whether to save the figure
+    :type savefig: bool
+    :param fig_name: Figure name
+    :type fig_name: str
     """
-    no_rows = int(find_nearest(factors(no_plots), no_plots/2.)[0])
-    no_cols = int(no_plots / no_rows)
-    return no_rows, no_cols
-
-
-def baseline_vis_analysis(data, fig_path, fig_name='vis_bl_analysis', \
-                          save_fig=False):
-    """Per baseline visibility analysis"""
-    # should be plot_size(data[***]) - need to find out which dimension
-    no_rows = plot_size()[0]
-    no_cols = plot_size()[1]
+    no_bls = bls.shape[0]
+    no_rows = int(round_to(no_bls, no_cols) / no_cols)
     fig, axs = plt.subplots(nrows=no_rows, ncols=no_cols, sharex=True, \
                             sharey=True, squeeze=False)
+    fig.set_size_inches(w=figsize[0], h=figsize[1])
+    ma_vis =  getattr(np.ma, vis_type_dict[vis_type])(ma_vis)
     for row in range(no_rows):
         for col in range(no_cols):
-            if (row*no_cols)+col <= len(baselines_dayflg_blflg_clipflg)-1:
-                axs[row, col].plot(chans_range+1, data[(row*no_cols)+col, :], \
+            if (row*no_cols)+col <= no_bls-1:
+                axs[row, col].plot(chans+1, ma_vis[(row*no_cols)+col, :], \
                                    linewidth=1)
-                axs[row, col].legend([str(baselines_dayflg_blflg_clipflg[(
-                    row*no_cols)+col])], loc='upper right', prop={'size': 6}, \
-                    frameon=False)
+                axs[row, col].legend([str(bls[(row*no_cols)+col])], \
+                    loc='upper right', prop={'size': 6}, frameon=False)
                 axs[row, col].xaxis.set_tick_params(width=1)
                 axs[row, col].yaxis.set_tick_params(width=1)
-    plt.suptitle('Visibility amplitudes for all E-W baselines', y=0.95)
+    plt.suptitle('Visibility {}s for all E-W baselines'.format(vis_type), y=0.95)
     fig.text(0.5, 0.04, 'Channel', ha='center')
-    fig.text(0.04, 0.5, 'Visibility amplitude', va='center', rotation='vertical')
-    fig.set_size_inches(w=11, h=7.5)
-    if save_fig:
-        if not fig_name.endswith('.pdf'):
-            fig_name = fig_name+'.pdf'
-        plt.savefig(os.path.join(fig_path, fig_name, format='pdf', dpi=300))
+    fig.text(0.04, 0.5, 'Visibility {}'.format(vis_type), va='center', \
+             rotation='vertical')
+    if savefig:
+        plt.savefig(figname_format(fig_name), format='pdf', dpi=300)
     plt.ion()
     plt.show()
 
 
-def baseline_ps_analysis(ps, fig_path, fig_name='ps_bl_analysis', save_fig=False):
-    """Per baseline power spectrum analysis"""
-    # should be plot_size(data[***]) - need to find out which dimension
-    no_rows = plot_size()[0]
-    no_cols = plot_size()[1]
+def per_bl_ps_plot(ps_data, bls, no_cols=5, figsize=(14, 10), savefig=False, \
+                   fig_name='ps_per_bl.pdf'):
+    """Per baseline power spectrum analysis
+
+    :param ps_data: Power spectrum results
+    :type ps_data: ndarray
+    :param bls: Baselines
+    :type bls: ndarray
+    :param no_cols: Number of columns to plot
+    :type no_cols: int
+    :param figsize: Size of figure in inches (w, h)
+    :type figsize: tuple
+    :param savefig: Whether to save the figure
+    :type savefig: bool
+    :param fig_name: Figure name
+    :type fig_name: str
+    """
+    no_bls = bls.shape[0]
+    no_rows = int(round_to(no_bls, no_cols) / no_cols)
     fig, axs = plt.subplots(nrows=no_rows, ncols=no_cols, sharex=True, \
                             sharey=True, squeeze=False)
-    fig.set_size_inches(w=11, h=7.5)
-    # TODO - automatically get xlims and ylims
-    plt.axis(xmin=-0.1, xmax=5.2, ymin=1e-10, ymax=1e-0)
+    fig.set_size_inches(w=figsize[0], h=figsize[1])
+    delays = ps_data[0, 0, :].real
+    onesided = not any(dly < 0 for dly in delays)
+    scaling = 1e6
+    x_rng= np.ceil(np.max(delays) * 1e6)
     for row in range(no_rows):
         for col in range(no_cols):
-            if (row*no_cols)+col <= len(baselines_dayflg_blflg_clipflg)-1:
-                axs[row, col].semilogy(np.real(
-                    ps[(row*no_cols)+col, 0, :])*1e6, np.absolute(ps[(row*no_cols)+col, \
-                    1, :]), linewidth=1)
-                axs[row, col].legend([str(baselines_dayflg_blflg_clipflg[(
-                    row*no_cols)+col])], loc='upper right', prop={'size': 6}, \
-                    frameon=False)
-            if return_onesided_ps:
-                axs[row, col].set_xticks(np.arange(0, 7, 2))
-                axs[row, col].set_xticks(np.arange(0, 6, 0.2), minor=True)
-            else:
-                axs[row, col].set_xticks(np.arange(-6, 7, 2))
-                axs[row, col].set_xticks(np.arange(-6, 6, 0.5), minor=True)
-            axs[row, col].set_yticks(
-                np.power(np.ones(5)*10, -np.arange(1, 10, 2)))
-    plt.suptitle('(Cross) power spectrum for all E-W baselines', y=0.95)
+            if (row*no_cols)+col <= no_bls-1:
+                axs[row, col].semilogy(ps_data[0, (row*no_cols)+col, :].real*scaling, \
+                                       np.abs(ps_data[1, (row*no_cols)+col, :]), linewidth=1)
+                axs[row, col].legend([str(bls[(row*no_cols)+col])], \
+                    loc='upper right', prop={'size': 6}, frameon=False)
+                if onesided:
+                    axs[row, col].set_xticks(np.arange(0, x_rng+1, 2))
+                    axs[row, col].set_xticks(np.arange(0, x_rng, 0.2), minor=True)
+                else:
+                    axs[row, col].set_xticks(np.arange(-x_rng, x_rng+1, 2))
+                    axs[row, col].set_xticks(np.arange(-x_rng, x_rng, 0.5), minor=True)
+                axs[row, col].set_yticks(np.power(np.ones(5)*10, -np.arange(1, 10, 2)))
+    plt.suptitle('Power spectrum for all E-W baselines', y=0.95)
     fig.text(0.5, 0.04, 'Geometric delay [$\mu$s]', ha='center')
-    fig.text(0.04, 0.5, 'Cross power spectrum [Amp**2]', va='center', \
+    fig.text(0.04, 0.5, 'Power spectrum [Amp**2]', va='center', \
              rotation='vertical')
-    if save_fig:
-        if not fig_name.endswith('.pdf'):
-            fig_name = fig_name+'.pdf'
-        plt.savefig(os.path.join(fig_path, fig_name, format='pdf', dpi=300))
+    if savefig:
+        plt.savefig(figname_format(fig_name), format='pdf', dpi=300)
     plt.ion()
     plt.show()
