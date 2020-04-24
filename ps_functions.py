@@ -84,20 +84,19 @@ def sig_clip(ma_vis, clip_dim, cenfunc='median', sigma=5.0, clip_rule='amp'):
     clip_rule_dict = {'amp': np.absolute, 'gmean': gmean}
     clip_dim = clip_dim_dict[clip_dim]
     old_axes = [0, 1, 2, 3]
-    new_axes = [0, 3, *clip_dict[clip_dim]]
-    ma_vis = np.moveaxis(ma_vis, old_axes, new_ax)
+    new_axes = [0, 3, *clip_dim]
+    ma_vis = np.moveaxis(ma_vis, old_axes, new_axes)
     days_mask = np.zeros_like(ma_vis.data)
     # iterate over last, freqs and {days, bls}
     for iter_dims in np.ndindex(ma_vis.shape[:3]):
         iter_data = ma_vis.data[iter_dims]
         # mask data array according to the clipping rule
         if clip_rule:
-            iter_data = clip_dim_dict[clip_rule](iter_data)
+            iter_data = clip_rule_dict[clip_rule](iter_data)
         clip = astropy.stats.sigma_clip(iter_data, sigma=sigma, \
                 maxiters=None, cenfunc=cenfunc, stdfunc='std', \
                 masked=True, return_bounds=False)
         days_mask[iter_dims] = clip.mask
-    print('Day clips: {}'.format(np.where(days_mask == True)[0].size))
     clipped_vis = np.ma.masked_where(days_mask, ma_vis)
     clipped_vis = np.moveaxis(ma_vis, new_axes, old_axes)
     return clipped_vis
@@ -137,7 +136,7 @@ def clipping(ma_vis, sig_clip_days=True, sig_clip_bls=True, sig_stds=5.0, \
         visibilities = sig_clip(ma_vis, clip_dim='bls', cenfunc=cenfunc, \
                                 sigma=sig_stds, clip_rule=clip_rule)
         no_bl_clip = np.sum(ma_vis.mask) - no_day_clip
-        print('Baseline clipping has been applied: {} visibilities masked'.\
+        print('Baseline clipping: {} visibilities masked'.\
               format(no_bl_clip))
 
     if sig_clip_days or sig_clip_bls:
