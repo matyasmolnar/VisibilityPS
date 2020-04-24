@@ -154,15 +154,12 @@ def dim_statistic(ma_vis, statistic, stat_dim):
     :type ma_vis: MaskedArray
     :param statistic: Statistic used on the dataset {'mean', 'median'}
     :type statistic: str
-    :param stat_dim: Dimension on which to apply statistic. Can either be int,
-    which represents axis, or str which represents the meaning of the dimension
-    :type stat_dim: int, str
+    :param stat_dim: Dimension on which to apply statistic
+    :type stat_dim: int
 
     :return: Statistic of masked visibibilities over the specified dimension
     :rtype: MaskedArray
     """
-    if not isinstance(stat_dim, int):
-        stat_dim = dim_dict[stat_dim]
     vis_stat = getattr(np.ma, statistic)(ma_vis, axis=stat_dim)
     return vis_stat
 

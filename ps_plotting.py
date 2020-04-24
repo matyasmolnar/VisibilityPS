@@ -32,13 +32,15 @@ def plot_stat_vis(ma_vis, chans, statistics, vis_type='amp', savefig=False, \
     """
     plt.figure(figsize=(10, 7))
     ma_vis =  getattr(np.ma, vis_type_dict[vis_type])(ma_vis)
-    print(ma_vis.dtype)
     if isinstance(statistics, str):
         statistics = [statistics]
     for statistic in statistics:
         stat = getattr(np.ma, statistic)
         # can't do stat(ma_vis, axis=(0, 1, 2)) because median of median != whole median
-        stat_vis = stat(stat(stat(ma_vis, axis=0), axis=0), axis=0)
+        stat_vis = ma_vis.copy()
+        for stat_dim in range(ma_vis.ndim - 1):
+            stat_vis = stat(stat_vis, axis=0)
+        # stat_vis = stat(stat(stat(ma_vis, axis=0), axis=0), axis=0)
         plt.plot(chans+1, stat_vis, label=statistic)
     plt.xlabel('Channel')
     plt.ylabel('Visibility {}'.format(vis_type))
@@ -50,7 +52,8 @@ def plot_stat_vis(ma_vis, chans, statistics, vis_type='amp', savefig=False, \
     plt.show()
 
 
-def plot_sample_vis(ma_vis, chans, vis_type='amp', tint_idx=0, day_idx=0, bl_idx=0):
+def plot_sample_vis(ma_vis, chans, vis_type='amp', tint_idx=0, day_idx=0, \
+    bl_idx=0, savefig=False, fig_name='sample_vis.pdf'):
     """Plot sample visibility
 
     :param ma_vis: Masked visibility dataset
@@ -65,6 +68,10 @@ def plot_sample_vis(ma_vis, chans, vis_type='amp', tint_idx=0, day_idx=0, bl_idx
     :type day_idx: int
     :param bl_idx:Index of baseline of visibility dataset to sample
     :type bl_idx: int
+    :param savefig: Whether to save the figure
+    :type savefig: bool
+    :param fig_name: Figure name
+    :type fig_name: str
     """
     sample_vis = ma_vis[tint_idx, day_idx, bl_idx, :]
     if sample_vis.mask.all():
@@ -76,30 +83,42 @@ def plot_sample_vis(ma_vis, chans, vis_type='amp', tint_idx=0, day_idx=0, bl_idx
         plt.plot(chans+1, ma_vis)
         plt.xlabel('Channel')
         plt.ylabel('Visibility {}'.format(vis_type))
+        if savefig:
+            plt.savefig(fig_name, format='pdf', dpi=300)
         plt.ion()
         plt.show()
 
 
-def plot_stat_ps(ps_data, statistics, scaling='spectrum', figname=None):
-    """Plotting the mean and/or median power spectra"""
-    plt.figure()
+def plot_stat_ps(ps_data, statistics, scaling='spectrum', savefig=False, \
+                 fig_name='sample_vis.pdf'):
+    """Plotting the mean and/or median power spectra
+
+    :param ps_data: Power spectrum results
+    :type ps_data: ndarray
+    :param statistics: Statistic to peform over bls, days and lsts {'mean', 'median'}
+    :type statistics: str, list
+    :param scaling: Scaling chosen during PS computation {'spectrum', 'density'}
+    :type scaling: str
+    :param savefig: Whether to save the figure
+    :type savefig: bool
+    :param fig_name: Figure name
+    :type fig_name: str
+    """
+    plt.figure(figsize=(12, 8))
     if isinstance(statistics, str):
         statistics = [statistics]
     for statistic in statistics:
-        stat = getattr(np, statistic)(ps_data, axis=0)
-        plt.semilogy(np.real(stat[0]*1e6), np.abs(stat[1]), label=statistic)
-        if scaling == 'density':
-            plt.ylabel('Cross power spectral density [Amp**2/s]')
-        elif scaling == 'spectrum':
-            plt.ylabel('Cross power spectrum [Amp**2]')
-        else:
-            raise ValueError('Choose either spectrum of density for scaling.')
-        plt.legend(loc='upper right')
-        plt.xlabel('Geometric delay [$\mu$s]')
-        plt.title('Cross power spectrum over E-W baselines')
-    if figname is not None:
-        if savefigs:
-            plt.savefig(figname, format='pdf', dpi=300)
+        stat_ps = getattr(np, statistic)(ps_data, axis=1)
+        plt.semilogy(stat_ps[0].real*1e6, np.abs(stat_ps[1]), label=statistic)
+    if scaling == 'spectrum':
+        plt.ylabel('Cross power spectrum [Amp**2]')
+    if scaling == 'density':
+        plt.ylabel('Cross power spectral density [Amp**2/s]')
+    plt.xlabel('Geometric delay [$\mu$s]')
+    plt.legend(loc='upper right')
+    plt.title('Cross power spectrum over E-W baselines')
+    if savefig:
+        plt.savefig(figname, format='pdf', dpi=300)
     plt.ion()
     plt.show()
 
