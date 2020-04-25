@@ -15,9 +15,8 @@ TODO:
 
 import numpy as np
 
-from ps_functions import cps, clipping, dim_statistic, ps
-from ps_plotting import baseline_vis_analysis, baseline_ps_analysis, \
-plot_single_bl_vis, plot_stat_vis,
+from ps_functions import cps, clipping, ps
+from ps_utils import hera_resolution, IndexVis
 
 
 #############################################################
@@ -50,8 +49,7 @@ sig_clip_days = True
 sig_clip_bls = True
 sig_stds = 5.0
 
-chan_start = 100
-chan_end = 250
+chan_bounds =  (100, 250)
 
 fig_path = '../test_data/'
 savefigs = False
@@ -63,70 +61,15 @@ if InJDs == 'IDR2':
     InJDs = idr2_jds
 
 
-if LAST < np.min(last) or LAST > np.max(last):
-    raise ValueError('Specify LAST value in between {} and {}'.format(
-        np.ceil(np.min(vis_data['last'])*100)/100, np.floor(np.max(vis_data['last'])*100)/100))
-
-if chan_start < chans[0] or chan_end > chans[-1] or chan_start > chan_end:
-    raise ValueError('Specify channels in between {} and {} with chan_start > \
-                     chan_end'.format(chans[0], chans[-1]))
-
-
 def main():
 
     DataDir = '/Users/matyasmolnar/Downloads/HERA_Data/test_data'
     aligned_vis = 'aligned_smaller.npz'
 
     # Loading npz file of aligned visibilities
-    # Has items ['visibilities', 'baselines', 'last', 'days', 'flags']
     vis_data = np.load(os.path.join(DataDir, aligned_vis))
-    visibilities = vis_data['visibilities'] # shape: (last bins, days, bls, chans)
-    baselines = vis_data['baselines'] # shape: (bl, [ant1, ant2])
-    last = vis_data['last'] # shape: (last bins, days)
-    days = vis_data['days'].astype(int) # JD days
-    flags = vis_data['flags'].astype(bool) # shape same dimensions as visibilities
-
-
-    # all in MHz, for HERA H1C_IDR2
-    bandwidth_start = 1.0e8
-    bandwidth_end = 2.0e8
-    resolution = 97656.25
-
-    chans = np.arange(1024, dtype=int)
-    chans_range = np.arange(chan_start-1, chan_end)
-    freqs = np.arange(bandwidth_start, bandwidth_end, resolution)
-    freqs_range = freqs[chans_range]
-
-
-    # Removing days that do not appear in InJDs or that are misaligned
-    misaligned_days = find_mis_days(last, days)
-    flt_days = [day for day in list(set(InJDs) & set(days)) if day not in misaligned_days]
-    flt_days_indexing = [np.where(days == flt_day)[0][0] for flt_day in flt_days]
-
-
-    # Removing bad baselines
-    bad_bls = [[50, 51]] # [66, 67], [67, 68], [68, 69],[82, 83], [83, 84], [122, 123]]
-    bad_bls_idxs = [np.where(vis_data['baselines'] == bad_bl) for bad_bl in \
-                    bad_bls if bad_bl in vis_data['baselines']]
-    bad_bls_idxs = [bad_bls_idx[0][0] for bad_bls_idx in bad_bls_idxs if \
-                    bad_bls_idx[0].size==2 and len(set(bad_bls_idxs[0][0]))==1]
-    bl_indexing = [bl_idx for bl_idx in range(vis_data['baselines'].shape[0]) if \
-                   bl_idx not in bad_bls_idxs]
-
-
-    # Selecting desired LASTs
-    last_idx = find_nearest(np.median(last, axis=1), LAST)[1]
-    last_indexing = sorted(nsmallest(last_tints, np.arange(last.shape[0]), \
-                                     key=lambda x: np.abs(x - last_idx)))
-
-
-    # Indexing out bad baselines and only selecting specified channels
-    vis_indexing = np.ix_(last_indexing, flt_days_indexing, bl_indexing, chans_range)
-    visibilities = visibilities[vis_indexing]
-    flags = flags[vis_indexing]
-    baselines = baselines[bl_indexing, :]
-    last = last[last_indexing, flt_days_indexing]
-    days = flt_days
+    index_vis = IndexVis(vis_data, InJDs, LAST, last_tints, chan_bounds)
+    visibilities, baselines, last, days, flags, chans_range = index_vis.do_indexing()
     print('Zero values in visibilities array: {}'.format(0+0j in visibilities))
 
 
@@ -162,15 +105,15 @@ def main():
     masked_bls_indexing = np.delete(np.arange(len(baselines)), masked_bls)
     print('Baseline(s) {} removed from analysis as all their visibilities are \
     flagged in the channel range {} - {}'.format([list(row) for row in \
-    baselines[masked_bls]], chan_start, chan_end))
+    baselines[masked_bls]], *chan_bounds))
 
     vis_half1 = vis_half1[masked_bls_indexing, :]
     vis_half2 = vis_half2[masked_bls_indexing, :]
     visibilities = visibilities[masked_bls_indexing, :]
     baselines = baselines[masked_bls_indexing]
 
-    vic_cps = cps(vis_half1, vis_half2, window='blackmanharris', length=None, \
-        scaling='spectrum', detrend=False, return_onesided=return_onesided_ps)
+    vic_cps = cps(vis_half1, vis_half2, resolution, window='blackmanharris', \
+        length=None, scaling='spectrum', detrend=False, return_onesided=return_onesided_ps)
 
 
 if __name__ == "__main__":

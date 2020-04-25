@@ -6,8 +6,6 @@ import functools
 import numpy as np
 from matplotlib import pyplot as plt
 
-from vis_utils import find_nearest
-
 
 vis_type_dict = {'amp':'abs', 'phase':'angle'}
 

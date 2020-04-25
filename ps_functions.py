@@ -1,57 +1,15 @@
 """HERA Visibility PS Computation Functions
 
-Collection of functions that take aligned HERA visibilities in LAST (as outputted by
-align_lst) and compute various PS estimates using simple statistics over LASTs,
-days and baselines.
+Collection of functions assist in taking aligned HERA visibilities in LAST
+(as outputted by align_lst) and compute various PS estimates using simple
+statistics over LASTs, days and baselines.
 """
 
-
-import os
-from heapq import nsmallest
 
 import astropy.stats
 import numpy as np
 from scipy import signal
-from scipy.stats import median_absolute_deviation as mad
 from scipy.stats.mstats import gmean
-
-from vis_utils import find_nearest
-
-
-def mod_zscore(arr):
-    """Modified z-score, as defined by Iglewicz and Hoaglin
-
-    :param arr: Array
-    :type arr: array-like
-
-    :return: Modified z-scores of the elements of the input array
-    :type: ndaray
-    """
-    return 0.6745*(np.asarray(arr) - np.median(arr))/mad(arr)
-
-
-def find_mis_days(last, jd_days, mod_z_tresh=3.5):
-    """Find misaligned days by computing the modified z-scores of the first and
-    last LAST timestamps, and discarding any days that have a modified z-score
-    that exceeds the treshold.
-
-    :param last: LAST
-    :type last: float
-    :param mod_z_tresh: Threshold of modified z-score to discard a day of data
-    :type mod_z_thresh: float
-
-    :return: Misaligned days
-    :rtype: ndarray
-    """
-    start_last, end_last = zip(*[(last[0, i], last[-1, i]) for i in \
-                                 range(last.shape[1])])
-    start_zscores = np.where(mod_zscore(start_last) > mod_z_tresh)[0]
-    end_zscores = np.where(mod_zscore(start_last) > mod_z_tresh)[0]
-    mis_days_idx = list(set(start_zscores & end_zscores))
-    mis_days = np.asarray(jd_days)[mis_days_idx]
-    if mis_days:
-        print('Misaligned days: {} - check alignment'.format(mis_days))
-    return mis_days
 
 
 def sig_clip(ma_vis, clip_dim, cenfunc='median', sigma=5.0, clip_rule='amp'):
