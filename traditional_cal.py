@@ -2,7 +2,28 @@
 
 Traditional calibration in CASA of visibility datasets, with no multiprocessing.
 
-Calibration steps for HERA IDR2 visibilities in miriad file format:
+example run:
+$ python traditional_cal.py /Users/matyasmolnar/Downloads/HERA_Data/test_data \
+--pol 'xx' --model 'FornaxA' --verbose
+"""
+
+
+import argparse
+import logging
+import os
+import textwrap
+
+from calibration_functions import cv, gcflagdata, fringerot, mkinitmodel, kc_cal, \
+bandpass_cal, dosplit, cleaninit, cleanfinal
+from vis_utils import get_data_paths, cleanspace
+
+
+def main():
+    parser = argparse.ArgumentParser(formatter_class=argparse.\
+    RawDescriptionHelpFormatter, description=textwrap.dedent("""
+    Traditional calibration in CASA of visibility datasets.
+
+    Calibration steps for HERA IDR2 visibilities in Miriad file format:
     1. Miriad visibilities are converted to measurement set (CASA) file format
     2. The visibilities are flagged in CASA:
         - Bad antennas removed
@@ -16,50 +37,35 @@ Calibration steps for HERA IDR2 visibilities in miriad file format:
     7. A first round of CLEANing is done
     8. Bandpass calibration is done for a second time
     9. A second round of CLEANing is done, with images also produced at this stage
-"""
+    """))
+    parser.add_argument('data_dir', help='Directory of visibilities in miriad \
+                        file format to reduce', type='str', metavar='IN')
+    parser.add_argument('-o', '--out_dir', required=False, default=None, \
+                        metavar='O', type=str, help='Output directory')
+    parser.add_argument('-p', '--pol', required=True, metavar='pol', type=str, \
+                        help='Polarization to calibrate {"xx", "xy", "yy", "yx"}')
+    parser.add_argument('-m', '--model', required=True, metavar='M', type=str, \
+                        help='J2000 coordinates of point source model or name of \
+                        well-known radio object (e.g. "GC, FornaxA")')
+    parser.add_argument('-d', '--days', required=False, default=None, metavar='D', \
+                        type=list, help='Selected JD days')
+    parser.add_argument('-t', '--times', required=False, default=None, metavar='T', \
+                        type=list, help='Selected fractional times')
+    parser.add_argument('-c', '--cleandir', required=False, action='store_true', \
+                        help='Remove all files in out_dir, only if specified')
+    parser.add_argument('-v', '--verbose', required=False, action='store_true', \
+                        help='Check status of data reduction steps for each \
+                        visibility dataset')
+    args = parser.parse_args()
 
-
-import logging
-import os
-
-from calibration_functions import cv, gcflagdata, fringerot, mkinitmodel, kc_cal, \
-bandpass_cal, dosplit, cleaninit, cleanfinal
-from vis_utils import get_data_paths, cleanspace
-
-
-#############################################################
-####### Modify the inputs in this section as required #######
-#############################################################
-
-# Directory of visibilities in miriad file format to reduce
-DataDir = "/rds/project/bn204/rds-bn204-asterics/HERA/data"
-# Output directory
-procdir = "/rds/project/bn204/rds-bn204-asterics/mdm49/IDR2_raw"
-
-Pol = 'xx' # Polarization of visibilities to process
-InDays = 2458098 # Select days to process
-InTimes = [] # OPTIONAL: select times e.g. [12552]
-
-# Remove all files in procdir
-clean_dir = True
-
-# Check status of data reduction steps for each visibility dataset
-conversion_verbose = True
-
-#############################################################
-
-
-# Main script for batch traditional calibration
-def main():
-
-    if verbose:
+    if args.verbose:
         logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(message)s')
 
-    if clean_dir:
+    if args.cleandir:
         cleanspace(procdir)
     os.chdir(procdir)
 
-    InData = get_data_paths(DataDir, Pol, InDays, InTimes)
+    InData = get_data_paths(args.data_dir, args.pol, days=args.days, times=args.times)
     data_files = [os.path.basename(dataset) for dataset in InData]
     logging.info('Datasets to calibrate: {}'.format(uv_files))
 
@@ -75,7 +81,9 @@ def main():
         logging.info('{} flagged'.format(ms_file))
 
     # TODO: only if source in FoV
-    ms = [fringerot(ms_file) for ms_file in ms]
+    # ms = [fringerot(ms_file) for ms_file in ms]
+
+    cal_source = args.model
 
     model_cl = mkinitmodel(cal_source)
     ms = [kc_cal(ms_file, model_cl) for ms_file in ms]

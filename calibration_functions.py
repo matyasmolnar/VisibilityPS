@@ -134,7 +134,7 @@ def fringerot(msin, phasecenter):
     casa.fixvis(msin, msin, phasecenter=phasecenter)
 
 
-def mkinitmodel(coords, **kwargs):
+def mkinitmodel(coords):
     """Make an initial point source model
 
     :param coords: J2000 coordinates of point source model or name of well-known
@@ -303,7 +303,7 @@ def genvisibility(msin, **kwargs):
     :param msin: Visibility dataset in measurement set format path
     :type msin: str
 
-    :return: Visibility data saved to npz file
+    :return: Visibility data saved to NpzFile file
     :rtype: str
     """
     fout = os.path.split(msin)[-1] + '.npz'
