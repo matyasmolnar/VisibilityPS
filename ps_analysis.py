@@ -84,17 +84,15 @@ def main():
                         help='Remove all files in out_dir, only if specified')
     args = parser.parse_args()
 
-    if args.out_dir is None:
+    out_dir = args.out_dir
+    if out_dir is None:
         out_dir = os.path.dirname(args.aligned_vis)
-    else:
-        out_dir = args.out_dir
+
+    InJDs  = args.days
+    if InJDs == 'IDR2':
+        InJDs = idr2_jds
 
     chan_bounds = tuple(map(int, args.chan_bounds.split('~')))
-
-    if args.days == 'IDR2':
-        InJDs = idr2_jds
-    else:
-        InJDs  = args.days
 
     # Loading npz file of aligned visibilities
     vis_data = np.load(args.aligned_vis)
