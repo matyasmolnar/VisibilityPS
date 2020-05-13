@@ -6,13 +6,8 @@ from heapq import nsmallest
 import numpy as np
 from scipy.stats import median_absolute_deviation as mad
 
+from idr2_info import bad_bls, hera_chans
 from vis_utils import find_nearest
-
-
-# For HERA H1C_IDR2
-bad_bls = [[50, 51]] # [66, 67], [67, 68], [68, 69],[82, 83], [83, 84], [122, 123]]
-hera_resolution = 97656.25 # MHz
-hera_chans = np.arange(1024, dtype=int)
 
 
 def mod_zscore(arr):

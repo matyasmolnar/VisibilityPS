@@ -39,7 +39,7 @@ def sig_clip(ma_vis, clip_dim, cenfunc='median', sigma=5.0, clip_rule='amp'):
     :rtype: MaskedArray
     """
     clip_dim_dict = {'days': [2, 1], 'bls': [1, 2]}
-    clip_rule_dict = {'amp': np.absolute, 'gmean': gmean}
+    clip_rule_dict = {'amp': np.abs, 'gmean': gmean}
     clip_dim = clip_dim_dict[clip_dim]
     old_axes = [0, 1, 2, 3]
     new_axes = [0, 3, *clip_dim]
