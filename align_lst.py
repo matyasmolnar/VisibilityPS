@@ -19,7 +19,6 @@ import textwrap
 
 
 class LST_Binner:
-
     """
     Class that takes the aligned LSTs and a dictionary of ALL the visibilities
     from all input days and concatenates them together and outputs them as a
@@ -225,7 +224,7 @@ class LST_Binner:
                                       dtype=numpy.int8)
         # Our baselines.
         self.baseline_array = numpy.zeros(shape=(self.baseline_no, 2))
-        print('Extracting Fields of Interest...', end=')
+        print('Extracting Fields of Interest...', end='')
         sys.stdout.flush()
         for i, date in enumerate(sorted(self.visibility_dict.keys())):
             self.day_array[i] = int(date)

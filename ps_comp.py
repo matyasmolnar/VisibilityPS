@@ -149,7 +149,7 @@ def import_data_ms(filename):
     ant1 = ant1[xc]
     ant2 = ant2[xc]
 
-    data_VV = data_real + data_imag*1.0j
+    data_VV = data_real + 1j*data_imag
 
     # Warning that flagged data was imported
     if np.any(flags):

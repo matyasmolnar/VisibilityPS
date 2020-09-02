@@ -1,17 +1,24 @@
 """Set of commonly used calibration functions
 
 heracasa package written by Bojan Nikolic, can be found at:
-http://www.mrao.cam.ac.uk/~bn204/g/
+http://www.mrao.cam.ac.uk/~bn204/soft/py/
+
+Modular installation of CASA 6 used. Documentation for this can be found at:
+https://casa.nrao.edu/casadocs/latest/usingcasa/obtaining-and-installing
 """
 
 
 import os
 
-import casa
 import numpy as np
+from pyuvdata import UVData
+
+from casatasks import applycal, bandpass, fixvis, flagdata, ft, gaincal, \
+importuvfits, imregrid, split, tclean
+from casatools import componentlist, table
 
 from heracasa import closure as hc
-from heracasa.data import uvconv
+# from heracasa.data import uvconv
 
 from idr2_info import idr2_bad_ants_casa
 
@@ -40,11 +47,12 @@ def cv(uvin):
     :returns: Visibility dataset in measurement set format path
     :rtype: str
     """
-    fitsi = os.path.splitext(os.path.basename(uvin))[0] + ".uvfits"
-    uvconv.cvuvfits(uvin, fitsi)
-    uvconv.renumb(fitsi, fitsi)
+    fitsi = os.path.splitext(os.path.basename(uvin))[0] + '.uvfits'
+    uvd = UVData()
+    uvd.read_miriad(uvin)
+    uvd.write_uvfits(fitsi, spoof_nonessential=True, force_phase=True)
     msout = fitsi[:-len('uvfits')] + 'ms'
-    casa.importuvfits(fitsi, msout)
+    importuvfits(fitsi, msout)
     os.remove(fitsi)
     return msout
 
@@ -98,22 +106,22 @@ def gcflagdata(msin, bad_ants, cut_edges=True, bad_chans=None):
             print('Visibility dataset {} not in IDR2 - no antennas flagged'.format(msin))
 
     # Flagging bad antennas known for that JD
-    if bad_ants:
-        casa.flagdata(msin, flagbackup=True, mode='manual',
-                      antenna=str(bad_ants).replace("[", "").replace("]", ""))
+    if bad_ants is not None:
+        flagdata(msin, flagbackup=True, mode='manual', \
+                 antenna=str(bad_ants).replace("[", "").replace("]", ""))
 
     # Cutting visibilities at extremes of bandwidth
     if cut_edges:
-        casa.flagdata(msin, flagbackup=True, mode='manual', spw='0:0~65')
-        casa.flagdata(msin, flagbackup=True, mode='manual', spw='0:930~1024')
+        flagdata(msin, flagbackup=True, mode='manual', spw='0:0~65')
+        flagdata(msin, flagbackup=True, mode='manual', spw='0:930~1024')
 
     # Flagging known bad channels
-    if bad_chans:
+    if bad_chans is not None:
         for bad_chan in bad_chans:
-            casa.flagdata(msin, flagbackup=True, mode='manual', spw='0:'+str(bad_chan))
+            flagdata(msin, flagbackup=True, mode='manual', spw='0:'+str(bad_chan))
 
     # Flag autocorrelations
-    casa.flagdata(msin, autocorr=True)
+    flagdata(msin, autocorr=True)
     return msin
 
 
@@ -131,7 +139,7 @@ def fringerot(msin, phasecenter):
     if coords == 'GC':
         phasecenter = GC_coords
 
-    casa.fixvis(msin, msin, phasecenter=phasecenter)
+    fixvis(msin, msin, phasecenter=phasecenter)
 
 
 def mkinitmodel(coords):
@@ -155,13 +163,14 @@ def mkinitmodel(coords):
             dir = coords
             coords = 'model'
 
-        casa.componentlist.done()
-        casa.componentlist.addcomponent(flux=1.0,
-                                        fluxunit='Jy',
-                                        shape='point',
-                                        dir=dir)
-        casa.componentlist.rename(coords+'.cl')
-        casa.componentlist.close()
+        cl = componentlist()
+        cl.done()
+        cl.addcomponent(flux=1.0,
+                                   fluxunit='Jy',
+                                   shape='point',
+                                   dir=dir)
+        cl.rename(coords+'.cl')
+        cl.close()
     return coords+'.cl'
 
 
@@ -181,7 +190,7 @@ def dosplit(msin, inf, datacolumn='corrected', spw=''):
     :rtype: str
     """
     newms = os.path.basename(msin) + inf + '.ms'
-    casa.split(msin, newms, datacolumn=datacolumn, spw=spw)
+    split(msin, newms, datacolumn=datacolumn, spw=spw)
     return newms
 
 
@@ -196,7 +205,7 @@ def calname(msin, cal_type):
     :return: Calibrator path
     :rtype: str
     """
-    return os.path.basename(m) + cal_type + '.cal'
+    return os.path.basename(msin) + cal_type + '.cal'
 
 
 def kc_cal(msin, model_cl):
@@ -211,17 +220,17 @@ def kc_cal(msin, model_cl):
     :rtype: list
     """
     # Fill the model column
-    casa.ft(msin, complist=model_cl, usescratch=True)
+    ft(msin, complist=model_cl, usescratch=True)
 
     kc = calname(msin, 'K') # Delays
     gc = calname(msin, 'G') # Gains
 
-    casa.gaincal(vis=msin, caltable=kc, gaintype='K', solint='inf',
+    gaincal(vis=msin, caltable=kc, gaintype='K', solint='inf',
             refant='11', minsnr=1)
     # Ensure reference antenna exists and isn't faulty
-    casa.gaincal(vis=msin, caltable=gc, gaintype='G', solint='inf',
+    gaincal(vis=msin, caltable=gc, gaintype='G', solint='inf',
             refant='11', minsnr=1, calmode='ap', gaintable=kc)
-    casa.applycal(msin, gaintable=[kc, gc])
+    applycal(msin, gaintable=[kc, gc])
     return [kc, gc]
 
 
@@ -235,8 +244,8 @@ def bandpass_cal(msin):
     :type: str
     """
     bc = calname(msin, 'B')
-    casa.bandpass(vis=msin, minsnr=1, solnorm=False, bandtype='B', caltable=bc)
-    casa.applycal(msin, gaintable=[bc])
+    bandpass(vis=msin, minsnr=1, solnorm=False, bandtype='B', caltable=bc)
+    applycal(msin, gaintable=[bc])
     return bc
 
 
@@ -255,17 +264,17 @@ def cleaninit(msin, cal_source):
         clean_mask = cal_source_dct[cal_source]['mask']
     else:
         clean_mask = None
-    casa.clean(vis=msin,
-               imagename=imgname,
-               niter=500,
-               weighting='briggs',
-               robust=0,
-               imsize=[512, 512],
-               cell=['250arcsec'],
-               mode='mfs',
-               nterms=1,
-               spw='0:150~900',
-               mask=clean_mask)
+    tclean(vis=msin,
+           imagename=imgname,
+           niter=500,
+           weighting='briggs',
+           robust=0,
+           imsize=[512, 512],
+           cell=['250arcsec'],
+           specmode='mfs',
+           nterms=1,
+           spw='0:150~900',
+           mask=clean_mask)
 
 
 def cleanfinal(msin, cal_source):
@@ -282,19 +291,19 @@ def cleanfinal(msin, cal_source):
     else:
         cal_source = '' # TODO create mask for arbitrary point source given
         clean_mask = None
-    casa.clean(vis=msin,
-               imagename=imgname,
-               spw='0:60~745',
-               niter=3000,
-               weighting='briggs',
-               robust=-1,
-               imsize=[512, 512],
-               cell=['250arcsec'],
-               mode='mfs',
-               nterms=1,
-               mask=clean_mask)
+    tclean(vis=msin,
+           imagename=imgname,
+           spw='0:60~745',
+           niter=3000,
+           weighting='briggs',
+           robust=-1,
+           imsize=[512, 512],
+           cell=['250arcsec'],
+           specmode='mfs',
+           nterms=1,
+           mask=clean_mask)
     imggal = cal_source + 'combined.galcord'
-    casa.imregrid(imagename=imgname+'.image', output=imggal, template='GALACTIC')
+    imregrid(imagename=imgname+'.image', output=imggal, template='GALACTIC')
 
 
 def genvisibility(msin, **kwargs):
@@ -321,10 +330,10 @@ def plot_ms(msin):
     :type msin: str
     """
     # Evaluate total time of observation
-    casa.tb.open(msin)
-    time_obs = tb.getcol('TIME')
-    casa.tb.close()
+    table.open(msin)
+    time_obs = table.getcol('TIME')
+    table.close()
     exposure = time_obs[-1] - time_obs[0]
 
-    casa.plotms(vis=msin, xaxis='chan', yaxis='amp', ydatacolumn='corrected',
-                dpi=600, highres=True, coloraxis='baseline', avgtime=str(exposure))
+    plotms(vis=msin, xaxis='chan', yaxis='amp', ydatacolumn='corrected',
+           dpi=600, highres=True, coloraxis='baseline', avgtime=str(exposure))

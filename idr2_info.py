@@ -52,8 +52,8 @@ bad_ants_list = [
     [0, 50, 98],
     [104, 50, 68, 117]
     ]
-idr2_bad_ants[1, :] = np.array([np.array(bad_ants_jd)
-                           for bad_ants_jd in bad_ants_list])
+idr2_bad_ants[1, :] = np.array([np.array(bad_ants_jd) for bad_ants_jd in \
+                                bad_ants_list], dtype=object)
 # Converting antenna numbers from HERA to CASA numbering by adding 1
 idr2_bad_ants_casa = np.copy(idr2_bad_ants)
 idr2_bad_ants_casa[1, :] += 1

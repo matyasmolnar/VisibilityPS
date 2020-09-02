@@ -3,7 +3,7 @@
 Traditional calibration in CASA of visibility datasets, with no multiprocessing.
 
 example run:
-$ python traditional_cal.py /Users/matyasmolnar/Downloads/HERA_Data/test_data \
+$ python traditional_cal.py /Users/matyasmolnar/Downloads/HERA_Data/test_data/data \
 --pol 'xx' --model 'FornaxA' --verbose
 """
 
@@ -39,7 +39,7 @@ def main():
     9. A second round of CLEANing is done, with images also produced at this stage
     """))
     parser.add_argument('data_dir', help='Directory of visibilities in miriad \
-                        file format to reduce', type='str', metavar='IN')
+                        file format to reduce', type=str, metavar='IN')
     parser.add_argument('-o', '--out_dir', required=False, default=None, \
                         metavar='O', type=str, help='Output directory')
     parser.add_argument('-p', '--pol', required=True, metavar='pol', type=str, \
@@ -62,12 +62,13 @@ def main():
         logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(message)s')
 
     if args.cleandir:
-        cleanspace(procdir)
-    os.chdir(procdir)
+        cleanspace(args.data_dir)
+    os.chdir(args.data_dir)
 
-    InData = get_data_paths(args.data_dir, args.pol, days=args.days, times=args.times)
+    InData = get_data_paths(args.data_dir, args.pol, days=args.days, \
+                            times=args.times, file_format='uv')
     data_files = [os.path.basename(dataset) for dataset in InData]
-    logging.info('Datasets to calibrate: {}'.format(uv_files))
+    logging.info('Datasets to calibrate: {}'.format(data_files))
 
     # Only convert miriad datasets
     ms = [cv(dataset) if os.path.basename(dataset).endswith('.uv') else dataset
@@ -86,12 +87,13 @@ def main():
     cal_source = args.model
 
     model_cl = mkinitmodel(cal_source)
-    ms = [kc_cal(ms_file, model_cl) for ms_file in ms]
-    ms = [bandpass_cal(ms_file) for ms_file in ms]
+    _ = [kc_cal(ms_file, model_cl) for ms_file in ms]
+    _ = [bandpass_cal(ms_file) for ms_file in ms]
     calsi = [dosplit(ms_file, 'ical') for ms_file in ms]
     _ = [cleaninit(calsi_file, cal_source) for calsi_file in calsi]
-    cals1 = [bandpass_cal(calsi_file) for calsi_file in calsi]
-    _ = [cleanfinal(cals1_file, cal_source) for cals1_file in cals1]
+    _ = [bandpass_cal(calsi_file) for calsi_file in calsi]
+    calsf = [dosplit(ms_file, 'fcal') for ms_file in ms]
+    _ = [cleanfinal(calsf_file, cal_source) for calsf_file in calsf]
 
 
 if __name__ == "__main__":
