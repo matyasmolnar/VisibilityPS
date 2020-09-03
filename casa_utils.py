@@ -5,18 +5,24 @@ To be run in a casapython shell.
 
 import os
 
+import casadata
 from casatools import table
 
 
 def add_hera_obs_pos():
-    """Adding HERA observatory position (at some point as PAPER_SA)"""
-    obstablename = os.getenv('CASAPATH').split()[0] + '/data/geodetic/Observatories/'
-    if not os.path.exists(obstablename + 'HERA'):
-        table.open(obstablename, nomodify=False)
-        paperi = (table.getcol('Name') == 'PAPER_SA').nonzero()[0]
-        table.copyrows(obstablename, startrowin=paperi, startrowout=-1, nrow=1)
-        table.putcell('Name', table.nrows()-1, 'HERA')
-        table.close()
+    """Adding HERA observatory position (at some point as PAPER_SA)
+
+    Only needed for the older versions of CASA
+    """
+    obstablename = os.path.dirname(casadata.__file__) + \
+                   '/__data__/geodetic/Observatories/'
+    tbl = table()
+    tbl.open(obstablename, nomodify=False)
+    if not (tbl.getcol('Name') == 'HERA').any():
+        paperi = (tbl.getcol('Name') == 'PAPER_SA').nonzero()[0]
+        tbl.copyrows(obstablename, startrowin=paperi, startrowout=-1, nrow=1)
+        tbl.putcell('Name', tbl.nrows()-1, 'HERA')
+        tbl.close()
 
 
 def plot_visibilities(msin):
