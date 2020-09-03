@@ -21,7 +21,7 @@ from vis_utils import get_data_paths, cleanspace
 def main():
     parser = argparse.ArgumentParser(formatter_class=argparse.\
     RawDescriptionHelpFormatter, description=textwrap.dedent("""
-    Traditional calibration in CASA of visibility datasets.
+    Traditional calibration in CASA of visibility datasets
 
     Calibration steps for HERA IDR2 visibilities in Miriad file format:
     1. Miriad visibilities are converted to measurement set (CASA) file format
