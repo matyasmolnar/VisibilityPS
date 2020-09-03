@@ -1,4 +1,8 @@
 """Data reduction of visibilities to npz file format (with calibration)
+
+example run:
+$ python reduction.py /Users/matyasmolnar/Downloads/HERA_Data/test_data/data \
+--pol xx --days 2458098 --times 31939 --model FornaxA --verbose
 """
 
 
@@ -9,10 +13,10 @@ import os
 import shutil
 import textwrap
 
-from calibration_functions import cv, gcflagdata, genvisibility, fringerot,
-mkinitmodel, kc_cal, bandpass_cal, dosplit, cleaninit, cleanfinal
+from calibration_functions import bandpass_cal, cleanfinal, cleaninit, cv, dosplit, \
+fringerot, gcflagdata, genvisibility, kc_cal, mkinitmodel
 from idr2_info import idr2_ants, idr2_bls
-from vis_utils import get_data_paths, cleanspace
+from vis_utils import cleanspace, get_data_paths
 
 
 def npz_conversion(uvin, model, raw, verbose, keep_ms):
@@ -39,7 +43,7 @@ def npz_conversion(uvin, model, raw, verbose, keep_ms):
         logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(message)s')
 
     logging.info('Reducing dataset {}'.format(uvin))
-    if os.path.basename(dataset).endswith('.uv'):
+    if os.path.basename(uvin).endswith('.uv'):
         ms = cv(uvin)
         logging.info('Miriad  dataset converted to ms file format')
     else:
@@ -51,17 +55,17 @@ def npz_conversion(uvin, model, raw, verbose, keep_ms):
 
     if not raw:
         # TODO: only if source in FoV
-        ms = fringerot(ms)
+        fringerot(ms, model)
         logging.info('{} fringe rotated'.format(ms))
 
         model_cl = mkinitmodel(model)
-        ms = kc_cal(ms, model)
-        ms = dobandpass(ms)
+        kc_cal(ms, model_cl)
+        bandpass_cal(ms)
         logging.info('{} gain, delay and bandpass calibrated rotated'.format(ms))
 
     npz = genvisibility(ms)
     logging.info('Saved to {}\n'.format(npz))
-    if rm_ms:
+    if not keep_ms:
         shutil.rmtree(ms)
     return npz
 
@@ -84,15 +88,15 @@ def main():
     5. The visibilities are saved as an ndarray to an npz file
     """))
     parser.add_argument('data_dir', help='Directory of visibilities in miriad \
-                        file format to reduce', type='str', metavar='IN')
+                        file format to reduce', type=str, metavar='IN')
     parser.add_argument('-o', '--out_dir', required=False, default=None, \
                         metavar='O', type=str, help='Output directory')
     parser.add_argument('-p', '--pol', required=True, metavar='pol', type=str, \
                         help='Polarization to calibrate {"xx", "xy", "yy", "yx"}')
     parser.add_argument('-d', '--days', required=False, default=None, metavar='D', \
-                        type=list, help='Selected JD days')
+                        type=int, nargs='+', help='Selected JD days')
     parser.add_argument('-t', '--times', required=False, default=None, metavar='T', \
-                        type=list, help='Selected fractional times')
+                        type=int, nargs='+', help='Selected fractional times')
     parser.add_argument('-m', '--model', required=True, metavar='M', type=str, \
                         help='J2000 coordinates of point source model or name of \
                         well-known radio object (e.g. "GC, FornaxA")')
@@ -108,11 +112,13 @@ def main():
                         visibility dataset')
     args = parser.parse_args()
 
-    if args.cleandir:
-        cleanspace(args.out_dir)
-    os.chdir(args.out_dir)
+    if args.out_dir is not None:
+        if args.cleandir:
+            cleanspace(args.out_dir)
+        os.chdir(args.out_dir)
 
-    InData = get_data_paths(args.data_dir, args.pol, days=args.days, times=args.times)
+    InData = get_data_paths(args.data_dir, args.pol, days=args.days, \
+                            times=args.times, file_format='uv')
     print('{} uv dataset(s) to reduce'.format(len(InData)))
 
     processes = []
@@ -126,5 +132,5 @@ def main():
         p.join()
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

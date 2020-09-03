@@ -96,5 +96,5 @@ def main():
     _ = [cleanfinal(calsf_file, cal_source) for calsf_file in calsf]
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

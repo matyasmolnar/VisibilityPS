@@ -19,7 +19,7 @@ from casatools import componentlist, table
 
 from heracasa import closure as hc
 
-from idr2_info import idr2_bad_ants_casa
+from idr2_info import idr2_ants, idr2_bad_ants_casa, idr2_bls
 
 
 GC_coords = 'J2000 17h45m40.04s -29d00m28.12s'
@@ -133,7 +133,7 @@ def fringerot(msin, phasecenter):
     """
     if phasecenter == 'FornaxA':
         phasecenter = FornaxA_coords
-    if coords == 'GC':
+    if phasecenter == 'GC':
         phasecenter = GC_coords
 
     fixvis(msin, msin, phasecenter=phasecenter)
@@ -312,7 +312,7 @@ def genvisibility(msin, **kwargs):
     :rtype: str
     """
     fout = os.path.split(msin)[-1] + '.npz'
-    r = hc.vis(msin, baseline=idr2_ants, alist=idr2_bls)
+    r = hc.vis(msin, baseline=idr2_bls, alist=idr2_ants)
     np.savez(fout, **r)
     if not os.path.exists(fout):
         raise RuntimeError('No output produced by heracasa.closure.vis')
