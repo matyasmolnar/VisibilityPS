@@ -18,7 +18,6 @@ importuvfits, imregrid, split, tclean
 from casatools import componentlist, table
 
 from heracasa import closure as hc
-# from heracasa.data import uvconv
 
 from idr2_info import idr2_bad_ants_casa
 
@@ -85,8 +84,7 @@ def gcflagdata(msin, bad_ants, cut_edges=True, bad_chans=None):
     :param msin: Visibility dataset in measurement set format path
     :type msin: str
     :param bad_ants: Bad antennas to flag - can be specified by a list of
-                     antennas, or can be given by a string specifying the
-                     data release
+    antennas, or can be given by a string specifying the data release
     :type bad_ants: list or str
     :param cut_edges: Specify if the band edges should be flagged
     :type cut_edges: bool
@@ -96,7 +94,6 @@ def gcflagdata(msin, bad_ants, cut_edges=True, bad_chans=None):
     :param msin: Flagged visibility dataset
     :type msin: Measurement set
     """
-
     if bad_ants == 'IDR2':
         JD = int(msin.split('.')[1]) # Get JD from filename
         if JD in idr2_bad_ants_casa[0, :]:
@@ -152,7 +149,6 @@ def mkinitmodel(coords):
     :return: Point source model file path
     :rtype: str
     """
-
     # Check if point source model has already been created
     if os.path.exists(coords+'.cl'):
         print('Model for {} already created'.format(coords))
@@ -171,7 +167,7 @@ def mkinitmodel(coords):
                                    dir=dir)
         cl.rename(coords+'.cl')
         cl.close()
-    return coords+'.cl'
+    return coords + '.cl'
 
 
 def dosplit(msin, inf, datacolumn='corrected', spw=''):
