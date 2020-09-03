@@ -3,27 +3,32 @@
 Power spectrum computation of the amplitudes of a visibility dataset in
 measurement set file format.
 
+example run:
+$ python ps_comp.py /Users/matyasmolnar/Downloads/HERA_Data/test_data/data/2458098/xx/zen.2458098.31939.xx.HH.uv \
+--verbose
+
 TODO:
     - Better way of selecting shortest EW baselines
     - Work with corrected data and compare visibilities before and after calibration
     and calibration + cleaning
-    - Sort out calling CASA functions - wait for v6.1?
+    - Separate baseline and time integration dimensions
 """
 
 
+import argparse
+import logging
 import os
 import pickle
 import sys
+import textwrap
 
 import numpy as np
 from matplotlib import pyplot as plt
 from scipy import signal
 
+from casatools import table, ms
+
 from calibration_functions import cv
-
-
-DataDir = '/Users/matyasmolnar/Downloads/HERA_Data/test_data'
-InMS = 'zen.2458098.31939.xx.HH.uv'
 
 
 class Visibility:
@@ -57,10 +62,10 @@ class Visibility:
 
 
 def import_data_ms(filename):
-    """Imports data from a casa measurement set and returns visibility object"""
+    """Imports data from a CASA measurement set and returns visibility object"""
 
-    tb = casac.casac.table()
-    ms = casac.casac.ms()
+    tb = table()
+    ms_ = ms()
 
     # Antenna information
     tb.open(filename)
@@ -74,11 +79,11 @@ def import_data_ms(filename):
     tb.close()
 
     # Spectral window information
-    ms.open(filename)
-    spw_info = ms.getspectralwindowinfo()
+    ms_.open(filename)
+    spw_info = ms_.getspectralwindowinfo()
     nchan = spw_info["0"]["NumChan"]
     npol = spw_info["0"]["NumCorr"]
-    ms.close()
+    ms_.close()
 
     # Frequency information
     tb.open(filename+"/SPECTRAL_WINDOW")
@@ -130,14 +135,15 @@ def import_data_ms(filename):
         data_real = Re[:, xc]
         data_imag = Im[:, xc]
         flags = flags[:, xc]
+        time = time[xc]
 
         # If the majority of points in any channel are flagged, it probably
         # means an entire channel is flagged - spit warning
         if np.mean(flags.all(axis=0)) > 0.5:
-            print('WARNING: Over half of the (u,v) points in at least one \
-            channel are marked as flagged. If you did not expect this, it is \
-            likely due to having an entire channel flagged in the ms. Please \
-            double check this and be careful if model fitting or using diff mode.')
+            print('WARNING: Over half of the (u,v) points in at least one '\
+                  'channel are marked as flagged. If you did not expect this, it is '\
+                  'likely due to having an entire channel flagged in the ms. Please '\
+                  'double check this and be careful if model fitting or using diff mode.')
 
         # Collapse flags to single channel, because weights are not currently channelized
         flags = flags.any(axis=0)
@@ -153,8 +159,8 @@ def import_data_ms(filename):
 
     # Warning that flagged data was imported
     if np.any(flags):
-        print('WARNING: Flagged data was imported. Visibility interpolation can \
-        proceed normally, but be careful with chi^2 calculations.')
+        print('WARNING: Flagged data was imported. Visibility interpolation can '\
+              'proceed normally, but be careful with chi^2 calculations.')
 
     return Visibility(data_VV.T, data_uu, data_vv, data_wgts, freqs, time, \
                       resolution, ant1, ant2, flags)
@@ -162,7 +168,7 @@ def import_data_ms(filename):
 
 def plot_ps_bl(amps, bl_no):
     """Plot the power spectrum for a single baseline"""
-    vis_bl = vis_amps[bl_no,:]
+    vis_bl = vis_amps[bl_no, :]
     delay, Pxx_spec = signal.periodogram(vis_bl, 1./vis_res, 'flattop', \
                                          scaling='spectrum', nfft=128)
     plt.figure()
@@ -171,7 +177,6 @@ def plot_ps_bl(amps, bl_no):
     plt.xlabel('Geometric delay [s]')
     plt.ylabel('Power spectrum [Amp RMS]')
     plt.show()
-
 
 
 def compute_ps(amps, res, infft=2**7):
@@ -196,7 +201,7 @@ def compute_ps(amps, res, infft=2**7):
     return vis_ps
 
 
-def shortest_ew_mask():
+def shortest_ew_mask(vis_data, flags):
     """Creates masks to only include shortest EW baselines"""
     vis_u = vis_data.uu
     vis_v = vis_data.vv
@@ -216,30 +221,49 @@ def shortest_ew_mask():
         np.absolute(vis_data.ant1 - vis_data.ant2) < 1.5, vis_u)
 
     # total mask selecting only the shortest EW consecutive baselines
-    total_mask = shortest_baselines.mask & ew_baselines.mask & consec_baselines.mask & flags
+    total_mask = shortest_baselines.mask & ew_baselines.mask & consec_baselines.mask \
+                 & flags
     return total_mask
 
 
 def main():
-    if verbose:
+    parser = argparse.ArgumentParser(formatter_class=argparse.\
+    RawDescriptionHelpFormatter, description=textwrap.dedent("""
+    Power spectrum computation of HERA visibility amplitudes
+
+    Takes a dataset in Miriad file format and computes the power spectrum of
+    visibility amplitudes for the shortest E-W baselines
+    """))
+    # parser.add_argument('data_dir', help='Directory of visibilities in miriad \
+    #                     file format to reduce', type=str, metavar='IN')
+    parser.add_argument('uv', help='Miriad dataset on which to perform PS computation', \
+                        type=str, metavar='UV')
+    parser.add_argument('-o', '--out_dir', required=False, default=None, \
+                        metavar='O', type=str, help='Output directory')
+    parser.add_argument('-v', '--verbose', required=False, action='store_true', \
+                        help='Check status of PS computation steps')
+    args = parser.parse_args()
+
+    if args.verbose:
         logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(message)s')
 
-    logging.info('Running PS computations for visibility dataset {}'.format(InMS))
-    os.chdir(DataDir)
-    InData = os.path.join(DataDir, InMS)
+    logging.info('Running PS computations for visibility dataset {}'.format(args.uv))
 
-    vis_class = os.path.splitext(InMS)[0] + 'vis_class.npz'
+    if args.out_dir is not None:
+        os.chdir(args.out_dir)
+
+    vis_class = os.path.splitext(args.uv)[0] + '.vis_class.npz'
     if os.path.exists(vis_class):
         with open(vis_class, 'rb') as file:
             logging.info('Reading npz visibility dataset {}'.format(os.path.basename(vis_class)))
             vis_data = pickle.load(file)
     else:
-        if InMS.endswith('.uv'):
+        if args.uv.endswith('.uv'):
             logging.info('Converting uv file to ms')
-            ms = cv(InMS)
+            msin = cv(args.uv)
         else:
-            ms = InMS
-        vis_data = import_data_ms(ms)
+            msin = args.uv
+        vis_data = import_data_ms(msin)
         with open(vis_class, 'wb') as file:
             logging.info('Saving ms file to npz')
             pickle.dump(vis_data, file, pickle.HIGHEST_PROTOCOL)
@@ -257,6 +281,7 @@ def main():
     power_spectra = compute_ps(vis_amps, vis_res)
     # print('Power_spectra ndarray has dimensions {}'.format(power_spectra.shape))
 
+    total_mask = shortest_ew_mask(vis_data, flags)
     vis_amps_short_ew = vis_amps[total_mask, :]
     power_spectra_short_ew = power_spectra[total_mask, :, :]
     x = np.mean(power_spectra_short_ew, axis=0)
@@ -266,7 +291,7 @@ def main():
     plt.xlabel('Geometric delay [$\mu$s]')
     plt.ylabel('Power spectrum [Amp RMS]')
     plt.savefig('test.pdf', format='pdf')
-    plt.show()
+    plt.close()
 
     # Finding which baselines to be used when extracting more visibility data for IDR2
     ant1_ew = ant1[total_mask]
