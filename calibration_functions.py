@@ -11,6 +11,8 @@ https://casa.nrao.edu/casadocs/latest/usingcasa/obtaining-and-installing
 import os
 
 import numpy as np
+from astropy.coordinates import Angle
+from hera_cal.utils import LST2JD
 from pyuvdata import UVData
 
 from casatasks import applycal, bandpass, fixvis, flagdata, ft, gaincal, \
@@ -21,6 +23,9 @@ from heracasa import closure as hc
 
 from idr2_info import idr2_ants, idr2_bad_ants_casa, idr2_bls
 
+
+FornaxA_RA_hours = '03h22m41.789s'
+GC_RA_hours =  '17h45m40.04s'
 
 GC_coords = 'J2000 17h45m40.04s -29d00m28.12s'
 GCCleanMask = 'ellipse[[17h45m40.04s, -29d00m28.12s], [11deg, 4deg], 30deg]'
@@ -333,3 +338,34 @@ def plot_ms(msin):
 
     plotms(vis=msin, xaxis='chan', yaxis='amp', ydatacolumn='corrected',
            dpi=600, highres=True, coloraxis='baseline', avgtime=str(exposure))
+
+
+def calibrator_in_fov(msin, calibrator_RA, FOV='0h30m'):
+    """Determine if calibrator in FOV of dataset
+
+    :param msin: Visibility dataset in measurement set format path
+    :type msin: str
+    :param calibrator_RA: Right ascension of calibrator
+    :type calibrator_RA: str
+    :param FOV: (Half) Field of view of intererometer in hours
+    :type FOV: str
+    """
+
+    if calibrator_RA == 'FornaxA':
+        calibrator_RA = FornaxA_RA_hours
+    if calibrator_RA == 'GC':
+        calibrator_RA = GC_RA_hours
+
+    uvd = UVData()
+    uvd.read_ms(msin)
+
+    calibrator_angle = Angle(calibrator_RA)
+    FOV = Angle(FOV)
+
+    ra_min = (FornaxA_RA - fov).radian
+    ra_max = (FornaxA_RA + fov).radian
+
+    if np.logical_and(uvd.lst_array > ra_min, uvd.lst_array < ra_max).any():
+        return True
+    else:
+        return False
