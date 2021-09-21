@@ -340,15 +340,18 @@ def plot_ms(msin):
            dpi=600, highres=True, coloraxis='baseline', avgtime=str(exposure))
 
 
-def calibrator_in_fov(msin, calibrator_RA, FOV='0h30m'):
+def calibrator_in_fov(msin, calibrator_RA, fov='0h30m'):
     """Determine if calibrator in FOV of dataset
 
     :param msin: Visibility dataset in measurement set format path
     :type msin: str
     :param calibrator_RA: Right ascension of calibrator
     :type calibrator_RA: str
-    :param FOV: (Half) Field of view of intererometer in hours
-    :type FOV: str
+    :param fov: (Half) Field of view of intererometer in hours
+    :type fov: str
+
+    :return: If there is a calibrator in the field of view for the given dataset
+    :rtype: bool
     """
 
     if calibrator_RA == 'FornaxA':
@@ -360,12 +363,9 @@ def calibrator_in_fov(msin, calibrator_RA, FOV='0h30m'):
     uvd.read_ms(msin)
 
     calibrator_angle = Angle(calibrator_RA)
-    FOV = Angle(FOV)
+    fov = Angle(fov)
 
-    ra_min = (FornaxA_RA - fov).radian
-    ra_max = (FornaxA_RA + fov).radian
+    ra_min = (calibrator_angle - fov).radian
+    ra_max = (calibrator_angle + fov).radian
 
-    if np.logical_and(uvd.lst_array > ra_min, uvd.lst_array < ra_max).any():
-        return True
-    else:
-        return False
+    return np.logical_and(uvd.lst_array > ra_min, uvd.lst_array < ra_max).any()
