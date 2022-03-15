@@ -9,6 +9,7 @@ https://casa.nrao.edu/casadocs/latest/usingcasa/obtaining-and-installing
 
 
 import os
+import shutil
 
 import numpy as np
 from astropy.coordinates import Angle
@@ -166,10 +167,7 @@ def mkinitmodel(coords):
 
         cl = componentlist()
         cl.done()
-        cl.addcomponent(flux=1.0,
-                                   fluxunit='Jy',
-                                   shape='point',
-                                   dir=dir)
+        cl.addcomponent(flux=1.0, fluxunit='Jy', shape='point', dir=dir)
         cl.rename(coords+'.cl')
         cl.close()
     return coords + '.cl'
@@ -209,7 +207,7 @@ def calname(msin, cal_type):
     return os.path.basename(msin) + cal_type + '.cal'
 
 
-def kc_cal(msin, model_cl):
+def kc_cal(msin, model_cl, refant=11):
     """Get gain and delay calibration solutions
 
     :param msin: Visibility dataset in measurement set format path
@@ -226,11 +224,12 @@ def kc_cal(msin, model_cl):
     kc = calname(msin, 'K') # Delays
     gc = calname(msin, 'G') # Gains
 
+    refant = str(refant)
     gaincal(vis=msin, caltable=kc, gaintype='K', solint='inf',
-            refant='11', minsnr=1)
+            refant=refant, minsnr=1)
     # Ensure reference antenna exists and isn't faulty
     gaincal(vis=msin, caltable=gc, gaintype='G', solint='inf',
-            refant='11', minsnr=1, calmode='ap', gaintable=kc)
+            refant=refant, minsnr=1, calmode='ap', gaintable=kc)
     applycal(msin, gaintable=[kc, gc])
     return [kc, gc]
 
@@ -250,7 +249,7 @@ def bandpass_cal(msin):
     return bc
 
 
-def cleaninit(msin, cal_source):
+def cleaninit(msin, cal_source, spw='0:150~900', niter=500, cell=['250arcsec']):
     """First CLEANing round
 
     :param msin: Visibility dataset in measurement set format path
@@ -267,18 +266,19 @@ def cleaninit(msin, cal_source):
         clean_mask = None
     tclean(vis=msin,
            imagename=imgname,
-           niter=500,
+           niter=niter,
+           deconvolver='hogbom',
            weighting='briggs',
            robust=0,
            imsize=[512, 512],
-           cell=['250arcsec'],
+           cell=cell,
            specmode='mfs',
            nterms=1,
-           spw='0:150~900',
+           spw=spw,
            mask=clean_mask)
 
 
-def cleanfinal(msin, cal_source):
+def cleanfinal(msin, cal_source, spw='0:60~745', niter=3000, cell=['250arcsec']):
     """Second CLEANing round and imaging
 
     :param msin: Visibility dataset in measurement set format path
@@ -294,16 +294,19 @@ def cleanfinal(msin, cal_source):
         clean_mask = None
     tclean(vis=msin,
            imagename=imgname,
+           deconvolver='hogbom',
            spw='0:60~745',
            niter=3000,
            weighting='briggs',
            robust=-1,
            imsize=[512, 512],
-           cell=['250arcsec'],
+           cell=cell,
            specmode='mfs',
            nterms=1,
            mask=clean_mask)
     imggal = cal_source + 'combined.galcord'
+    if os.path.exists(imggal):
+        shutil.rmtree(imggal)
     imregrid(imagename=imgname+'.image', output=imggal, template='GALACTIC')
 
 
@@ -360,7 +363,7 @@ def calibrator_in_fov(msin, calibrator_RA, fov='0h30m'):
         calibrator_RA = GC_RA_hours
 
     uvd = UVData()
-    uvd.read_ms(msin)
+    uvd.read(msin)
 
     calibrator_angle = Angle(calibrator_RA)
     fov = Angle(fov)
@@ -368,4 +371,6 @@ def calibrator_in_fov(msin, calibrator_RA, fov='0h30m'):
     ra_min = (calibrator_angle - fov).radian
     ra_max = (calibrator_angle + fov).radian
 
-    return np.logical_and(uvd.lst_array > ra_min, uvd.lst_array < ra_max).any()
+    lsts = np.sort(np.unique(uvd.lst_array))
+
+    return np.logical_and(lsts > ra_min, lsts < ra_max).any()
