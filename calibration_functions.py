@@ -188,7 +188,7 @@ def dosplit(msin, inf, datacolumn='corrected', spw=''):
     :return: Visibility subset in measurement set format path
     :rtype: str
     """
-    newms = os.path.basename(msin) + inf + '.ms'
+    newms = msin + inf + '.ms'
     split(msin, newms, datacolumn=datacolumn, spw=spw)
     return newms
 
@@ -204,7 +204,7 @@ def calname(msin, cal_type):
     :return: Calibrator path
     :rtype: str
     """
-    return os.path.basename(msin) + cal_type + '.cal'
+    return msin + cal_type + '.cal'
 
 
 def kc_cal(msin, model_cl, refant=11):
@@ -259,7 +259,7 @@ def cleaninit(msin, cal_source, spw='0:150~900', niter=500, cell=['250arcsec']):
 
     TODO: Argument to specify mask
     """
-    imgname = os.path.basename(msin) + '.init.img'
+    imgname = msin + '.init.img'
     if cal_source in cal_source_dct.keys():
         clean_mask = cal_source_dct[cal_source]['mask']
     else:
@@ -286,7 +286,7 @@ def cleanfinal(msin, cal_source, spw='0:60~745', niter=3000, cell=['250arcsec'])
     :param cal_source: Calibration source for masking
     :type cal_source: str
     """
-    imgname = os.path.basename(msin) + '.fin.img'
+    imgname = msin + '.fin.img'
     if cal_source in cal_source_dct.keys():
         clean_mask = cal_source_dct[cal_source]['mask']
     else:
@@ -304,7 +304,7 @@ def cleanfinal(msin, cal_source, spw='0:60~745', niter=3000, cell=['250arcsec'])
            specmode='mfs',
            nterms=1,
            mask=clean_mask)
-    imggal = cal_source + 'combined.galcord'
+    imggal = os.path.join(os.path.dirname(msin), cal_source + 'combined.galcord')
     if os.path.exists(imggal):
         shutil.rmtree(imggal)
     imregrid(imagename=imgname+'.image', output=imggal, template='GALACTIC')
